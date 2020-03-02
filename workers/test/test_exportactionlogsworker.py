@@ -46,7 +46,7 @@ def storage_engine(request):
 
 def test_export_logs_failure(initialized_db):
     # Make all uploads fail.
-    test_storage.put_content("local_us", "except_upload", "true")
+    test_storage.put_content("local_us", "except_upload", b"true")
 
     repo = model.repository.get_repository("devtable", "simple")
     user = model.user.get_user("devtable")

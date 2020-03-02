@@ -5,7 +5,7 @@ import time
 import uuid
 
 from datetime import datetime, timedelta
-from io import BytesIO
+from io import BytesIO, StringIO
 
 from enum import Enum, unique
 
@@ -117,7 +117,7 @@ class ExportActionLogsWorker(QueueWorker):
             upload_id,
             0,
             -1,
-            BytesIO(str(prefix_data)),
+            BytesIO(prefix_data.encode("utf-8")),
             upload_metadata,
         )
         uploaded_byte_count = len(prefix_data)
@@ -157,7 +157,7 @@ class ExportActionLogsWorker(QueueWorker):
                 upload_id,
                 0,
                 -1,
-                BytesIO(str(suffix_data)),
+                StringIO(suffix_data),
                 upload_metadata,
             )
             if upload_error is not None:
@@ -224,7 +224,7 @@ class ExportActionLogsWorker(QueueWorker):
                         upload_id,
                         0,
                         -1,
-                        BytesIO(logs_data),
+                        StringIO(logs_data),
                         upload_metadata,
                     )
 

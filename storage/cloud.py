@@ -1,4 +1,7 @@
-import io as StringIO
+import traceback
+import sys
+
+import io
 import os
 import logging
 import copy
@@ -139,6 +142,7 @@ class _CloudStorage(BaseStorageV2):
         path = self._init_path(path)
         key = self._key_class(self._cloud_bucket, path)
         try:
+            print("TYPE:", type(key.get_contents_as_string()))
             return key.get_contents_as_string()
         except S3ResponseError as s3r:
             # Raise an IOError in case the key was not found, to maintain the current
@@ -249,7 +253,7 @@ class _CloudStorage(BaseStorageV2):
             return 0, e
 
         # We are going to reuse this but be VERY careful to only read the number of bytes written to it
-        buf = StringIO.StringIO()
+        buf = io.BytesIO()
 
         num_part = 1
         total_bytes_written = 0
@@ -267,6 +271,7 @@ class _CloudStorage(BaseStorageV2):
                     break
 
                 buf.seek(0)
+                print("TEST", type(mp))
                 mp.upload_part_from_file(buf, num_part, size=bytes_staged)
                 total_bytes_written += bytes_staged
                 num_part += 1
@@ -288,6 +293,7 @@ class _CloudStorage(BaseStorageV2):
                 else:
                     break
 
+        print("TOTAL BYTES WRITTEN:", total_bytes_written)
         if total_bytes_written > 0:
             multipart_uploads_completed.inc()
 
@@ -402,6 +408,8 @@ class _CloudStorage(BaseStorageV2):
         bytes_written, write_error = self._stream_write_internal(
             chunk_path, in_fp, cancel_on_error=False, size=length, content_type=content_type
         )
+
+        print("BYTES WRITTEN:", bytes_written)
 
         new_metadata = copy.deepcopy(storage_metadata)
 
