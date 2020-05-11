@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package buildman_pb;
+
+option go_package = "github.com/quay/buildman-go";
+
+import "google/protobuf/struct.proto";
+	
+
+service BuildManager {
+	rpc Ping(PingRequest) returns (Pong) {}
+  rpc RegisterBuildJob(BuildJobArgs) returns (BuildPack) {}
+  rpc Heartbeat(stream HeartbeatRequest) returns (HeartbeatResponse) {}
+
+	rpc LogMessage(LogMessageRequest) returns (LogMessageResponse) {}
+	rpc DetermineCacheTag(CachedTagRequest) returns (CachedTag) {}
+  
+}
+
+message PingRequest {}
+message Pong {
+	string reply = 1;
+}
+
+message BuildJobArgs {
+  string register_jwt = 1;
+}
+message BuildPack {
+  string job_jwt = 1;
+
+  oneof build_pack {
+    string package_url = 2;
+    GitPackage git_package = 3;
+  }
+
+  string context = 4;
+  string dockerfile_path = 5;
+  string repository = 6;
+  string registry = 7;
+  string pull_token = 8;
+  string push_token = 9;
+  repeated string tag_names = 10;
+
+  message GitPackage {
+    string url = 1;
+    string sha = 2;
+    string private_key = 3;
+  }
+}
+
+message HeartbeatRequest {
+  string job_jwt = 1;
+}
+message HeartbeatResponse {
+	bool reply = 1;
+}
+
+message LogMessageRequest {
+  string job_jwt = 1;
+  string timestamp = 2;
+	string phase = 3;
+	google.protobuf.Struct json_data = 4;
+}
+message LogMessageResponse {
+	bool succeeded = 1;
+  string timestamp = 2;
+}
+
+message CachedTagRequest {
+	string command_comments = 1;
+	string base_image_name = 2;
+	string base_image_tag = 3;
+	string base_image_id = 4;
+}
+message CachedTag {
+	string CachedTag = 1;
+}
+

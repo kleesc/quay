@@ -174,3 +174,7 @@ yapf-test:
 
 black:
 	black --line-length 100 --target-version py27 .
+
+gen-protobuf:
+	python -m grpc_tools.protoc -I buildman/buildman_pb --python_out=buildman/buildman_pb --grpc_python_out=buildman/buildman_pb buildman/buildman_pb/buildman.proto && \
+	sed -i.bak "s/import\ buildman_pb2/import\ buildman\.buildman_pb\.buildman_pb2/g" buildman/buildman_pb/buildman_pb2_grpc.py && rm buildman/buildman_pb/buildman_pb2_grpc.py.bak
