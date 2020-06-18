@@ -566,6 +566,10 @@ class EphemeralBuilderManager(BaseManager):
                 realm,
                 build_uuid,
             )
+        except OrchestratorConnectionError:
+            logger.exception(
+                "Exception when writing realm %s to orchestrator for job %s; could not connect", realm, build_uuid
+            )
         except OrchestratorError:
             logger.exception(
                 "Exception when writing realm %s to orchestrator for job %s", realm, build_uuid
@@ -747,6 +751,7 @@ class EphemeralBuilderManager(BaseManager):
             raise Return()
         except OrchestratorConnectionError:
             logger.exception("failed to connect when attempted to extend job")
+            raise Return()
 
         build_job_metadata = json.loads(job_data)
 
@@ -770,6 +775,11 @@ class EphemeralBuilderManager(BaseManager):
         except OrchestratorConnectionError:
             logger.exception(
                 "Could not update heartbeat for job as the orchestrator is not available"
+            )
+            yield From(sleep(ORCHESTRATOR_UNAVAILABLE_SLEEP_DURATION))
+        except OrchestratorError:
+            logger.exception(
+                "Could not update heartbeat for job due to orchestrator error"
             )
             yield From(sleep(ORCHESTRATOR_UNAVAILABLE_SLEEP_DURATION))
 
