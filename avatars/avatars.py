@@ -1,6 +1,7 @@
 import hashlib
 import math
 import logging
+import features
 
 from requests.exceptions import RequestException
 
@@ -107,7 +108,9 @@ class BaseAvatar(object):
         # so use the username in that case.
         username_email_or_id = email_or_id or name
         username_email_or_id = Bytes.for_string_or_unicode(username_email_or_id).as_unicode()
-        hash_value = hashlib.md5(username_email_or_id.strip().lower().encode("utf-8")).hexdigest()
+        hash_value = hashlib.sha256(
+            username_email_or_id.strip().lower().encode("utf-8")
+        ).hexdigest()
 
         byte_count = int(math.ceil(math.log(len(colors), 16)))
         byte_data = hash_value[0:byte_count]
@@ -133,6 +136,30 @@ class GravatarAvatar(BaseAvatar):
             hash_value,
             size,
         )
+
+    def get_data(self, name, email_or_id, kind="user"):
+        """Computes and returns the full data block for the avatar:
+        {
+          'name': name,
+          'hash': The gravatar hash, if any.
+          'color': The color for the avatar
+        }
+        """
+        colors = self.colors
+
+        # Note: email_or_id may be None if gotten from external auth when email is disabled,
+        # so use the username in that case.
+        username_email_or_id = email_or_id or name
+        username_email_or_id = Bytes.for_string_or_unicode(username_email_or_id).as_unicode()
+
+        assert features.FIPS == False, "AVATAR_KIND must not be Gravatar in FIPS mode."
+        hash_value = hashlib.md5(username_email_or_id.strip().lower().encode("utf-8")).hexdigest()
+
+        byte_count = int(math.ceil(math.log(len(colors), 16)))
+        byte_data = hash_value[0:byte_count]
+        hash_color = colors[int(byte_data, 16) % len(colors)]
+
+        return {"name": name, "hash": hash_value, "color": hash_color, "kind": kind}
 
 
 class LocalAvatar(BaseAvatar):
