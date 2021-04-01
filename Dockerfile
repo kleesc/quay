@@ -73,8 +73,7 @@ RUN curl --silent --location https://rpm.nodesource.com/setup_12.x | bash - && \
     rpm --import https://dl.yarnpkg.com/rpm/pubkey.gpg && \
     yum install -y yarn && \
     yarn install --ignore-engines && \
-    yarn build && \
-    yarn build-config-app
+    yarn build
 
 # TODO: Build jwtproxy in dist-git
 #       https://jira.coreos.com/browse/QUAY-1315
