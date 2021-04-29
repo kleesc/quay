@@ -3,7 +3,7 @@ import time
 
 import features
 
-from app import repository_gc_queue, all_queues
+from app import app, repository_gc_queue, all_queues
 from data import model, database
 from workers.queueworker import QueueWorker, WorkerSleepException
 from util.log import logfile_path
@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 POLL_PERIOD_SECONDS = 60
-REPOSITORY_GC_TIMEOUT = 60 * 15  # 15 minutes
-LOCK_TIMEOUT_PADDING = 60  # seconds
+REPOSITORY_GC_TIMEOUT = 3 * 60 * 60  # 3h
+LOCK_TIMEOUT_PADDING = 60  # 60 seconds
 
 
 class RepositoryGCWorker(QueueWorker):
@@ -43,7 +43,8 @@ class RepositoryGCWorker(QueueWorker):
             return
 
         logger.debug("Purging repository %s", marker.repository)
-        model.gc.purge_repository(marker.repository)
+        if not model.gc.purge_repository(marker.repository):
+            raise Exception("GC interrupted; will retry")
 
 
 if __name__ == "__main__":
@@ -54,6 +55,7 @@ if __name__ == "__main__":
         while True:
             time.sleep(100000)
 
+    GlobalLock.configure(app.config)
     logger.debug("Starting repository GC worker")
     worker = RepositoryGCWorker(
         repository_gc_queue,
