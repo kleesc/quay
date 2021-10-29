@@ -165,7 +165,16 @@ class BuilderExecutor(object):
             with open(os.path.join(OVERRIDE_CONFIG_DIRECTORY, "ssl.cert"), "r") as f:
                 return f.read()
         except:
-            return None
+            pass
+
+        # Try looking for a buildman specific cert
+        try:
+            with open(os.path.join(OVERRIDE_CONFIG_DIRECTORY, "ssl_buildman.cert"), "r") as f:
+                return f.read()
+        except:
+            pass
+
+        return None
 
     def generate_cloud_config(
         self,
@@ -192,6 +201,12 @@ class BuilderExecutor(object):
             else self.manager_hostname
         )
 
+        # Whether the builder nodes will try to connect to the build manager using insecure gRPC connections.
+        # Even if EXTERNAL_TLS_TERMINATION is set and no certs are provided,
+        # the build nodes could still be using TLS, say if termination was done going through a LB/router.
+        # For that reason, unless explicitly set, builder nodes will try to connect with TLS.
+        insecure = self.executor_config.get("INSECURE", False)
+
         rendered_json = json.load(
             io.StringIO(
                 TEMPLATE.render(
@@ -200,6 +215,7 @@ class BuilderExecutor(object):
                     quay_username=quay_username,
                     quay_password=quay_password,
                     manager_hostname=server_grpc_addr,
+                    insecure=insecure,
                     registry_hostname=self.registry_hostname,
                     worker_image=self.executor_config.get(
                         "WORKER_IMAGE", "quay.io/coreos/registry-build-worker"

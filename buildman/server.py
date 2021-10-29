@@ -8,7 +8,6 @@ from threading import Event
 
 from flask import Flask
 
-from app import app
 from buildman.buildmanagerservicer import BuildManagerServicer
 from buildman.buildman_pb import buildman_pb2, buildman_pb2_grpc
 

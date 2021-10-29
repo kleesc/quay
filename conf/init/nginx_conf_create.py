@@ -70,6 +70,7 @@ def generate_nginx_config(config):
     """
     config = config or {}
     use_https = os.path.exists(os.path.join(QUAYCONF_DIR, "stack/ssl.key"))
+    use_https_for_buildman = os.path.exists(os.path.join(QUAYCONF_DIR, "stack/ssl_buildman.cert"))
     v1_only_domain = config.get("V1_ONLY_DOMAIN", None)
     enable_rate_limits = config.get("FEATURE_RATE_LIMITS", False)
     ssl_protocols = config.get("SSL_PROTOCOLS", SSL_PROTOCOL_DEFAULTS)
@@ -78,6 +79,7 @@ def generate_nginx_config(config):
     write_config(
         os.path.join(QUAYCONF_DIR, "nginx/nginx.conf"),
         use_https=use_https,
+        use_https_for_buildman=use_https_for_buildman,
         enable_rate_limits=enable_rate_limits,
         v1_only_domain=v1_only_domain,
         ssl_protocols=ssl_protocols,

@@ -185,7 +185,7 @@ RUN set -ex\
 
 RUN rm -Rf node_modules config_app/node_modules
 
-EXPOSE 8080 8443 7443 9091 55443
+EXPOSE 8080 8443 7443 9091 55443 55051
 # Don't expose /var/log as a volume, because we just configured it
 # correctly above.
 # It's probably unwise to mount /tmp as a volume but if someone must,

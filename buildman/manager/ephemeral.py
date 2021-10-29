@@ -105,7 +105,13 @@ class EphemeralBuilderManager(BuildStateInterface):
     }
 
     def __init__(
-        self, registry_hostname, manager_hostname, queue, build_logs, user_files, instance_keys
+        self,
+        registry_hostname,
+        manager_hostname,
+        queue,
+        build_logs,
+        user_files,
+        instance_keys,
     ):
         self._registry_hostname = registry_hostname
         self._manager_hostname = manager_hostname

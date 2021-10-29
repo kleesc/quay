@@ -2,6 +2,9 @@
 
 TOKEN={{ token }}
 SERVER={{ manager_hostname }}
+{% if insecure %}
+INSECURE=true
+{% endif %}
 {% if http_proxy %}
 HTTP_PROXY={{ http_proxy }}
 {% elif https_proxy %}
@@ -76,6 +79,7 @@ WantedBy=multi-user.target
   },
   "storage": {
     "files": [
+      {% if ca_cert %}
       {
         "path": "/etc/pki/ca-trust-source/anchors/ssl.cert",
         "contents": {
@@ -99,6 +103,7 @@ WantedBy=multi-user.target
         },
         "mode": 420
       },
+      {% endif %}
       {% endif %}
       {
         "path": "/etc/hostname",
