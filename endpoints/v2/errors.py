@@ -124,6 +124,11 @@ class TagInvalid(V2RegistryException):
         super(TagInvalid, self).__init__("TAG_INVALID", "manifest tag did not match URI", detail)
 
 
+class TagUnknown(V2RegistryException):
+    def __init__(self, message=None, detail=None):
+        super(TagExpired, self).__init__("TAG_UNKNOWN", message or "tag unknown", detail, 404)
+
+
 class LayerTooLarge(V2RegistryException):
     def __init__(self, uploaded=None, max_allowed=None):
         detail = {}

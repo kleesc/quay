@@ -27,6 +27,7 @@ from endpoints.v2.errors import (
     ManifestUnknown,
     NameInvalid,
     TagExpired,
+    TagUnknown,
     NameUnknown,
     QuotaExceeded,
 )
@@ -308,6 +309,8 @@ def delete_manifest_by_digest(namespace_name, repo_name, manifest_ref):
 
     Note: there is no equivalent method for deleting by tag name because it is
     forbidden by the spec.
+
+    Edit: Deletion by tag reference was added as part of the OCI distribution spec.
     """
     with db_disallow_replica_use():
         repository_ref = registry_model.lookup_repository(namespace_name, repo_name)
@@ -327,6 +330,34 @@ def delete_manifest_by_digest(namespace_name, repo_name, manifest_ref):
 
         if app.config.get("FEATURE_QUOTA_MANAGEMENT", False):
             namespacequota.force_cache_repo_size(repository_ref)
+
+        return Response(status=202)
+
+
+@v2_bp.route(MANIFEST_TAGNAME_ROUTE, methods=["DELETE"])
+@disallow_for_account_recovery_mode
+@parse_repository_name()
+@process_registry_jwt_auth(scopes=["pull", "push"])
+@require_repo_write
+@anon_protect
+@check_readonly
+def delete_tag_by_tagname(namespace_name, repo_name, manifest_ref):
+    """
+    Delete the tag specified.
+
+    TODO(kleesc): This would need to also invalidate the current cache for tags list.
+    """
+    with db_disallow_replica_use():
+        repository_ref = registry_model.lookup_repository(namespace_name, repo_name)
+        if repository_ref is None:
+            raise NameUnknown()
+
+        try:
+            registry_model.delete_tag(repository_ref, manifest_ref)
+        except:
+            raise TagUnknown()
+
+        track_and_log("delete_tag", repository_ref, tag=tag.name, digest=tag.manifest_digest)
 
         return Response(status=202)
 

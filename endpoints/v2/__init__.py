@@ -78,7 +78,7 @@ def paginate(
             except ValueError:
                 requested_limit = 0
 
-            limit = max(min(requested_limit, _MAX_RESULTS_PER_PAGE), 1)
+            limit = max(min(requested_limit, _MAX_RESULTS_PER_PAGE), 0)
             next_page_token = request.args.get("next_page", request.args.get("last", None))
 
             # Decrypt the next page token, if any.
