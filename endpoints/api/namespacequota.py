@@ -22,7 +22,7 @@ from endpoints.api import (
     validate_json_request,
     request_error,
     require_user_admin,
-    erequire_scope,
+    require_scope,
     show_if,
 )
 from endpoints.exception import InvalidToken, Unauthorized
@@ -350,4 +350,3 @@ class UserQuotaReport(ApiResource):
         return {
             "response": model.namespacequota.get_namespace_repository_sizes_and_cache(parent)
         }, 200
-    

@@ -214,6 +214,82 @@ class SuperUserOrganizationList(ApiResource):
         raise Unauthorized()
 
 
+@resource("/v1/superuser/user/<username>/quota/")
+@internal_only
+@show_if(features.SUPER_USERS)
+@show_if(features.QUOTA_MANAGEMENT)
+class SuperUserUserQuota(ApiResource):
+    """
+    Resource for listing organizations in the system.
+    """
+
+    @require_fresh_login
+    @verify_not_prod
+    @nickname("createUserQuotaReport")
+    @require_scope(scopes.SUPERUSER)
+    def post(self, orgname):
+        if SuperUserPermission().can():
+            quota_data = request.get_json()
+
+            quota = model.namespacequota.get_namespace_quota(orgname)
+
+            if quota is not None:
+                 msg = "quota already exists"
+                 raise request_error(message=msg)
+
+            try:
+                newquota = model.namespacequota.create_namespace_quota(
+                    name=orgname, limit_bytes=quota_data["limit_bytes"]
+                )    
+                if newquota is not None:
+                    return "Created", 201
+                else:
+                    raise request_error("Quota Failed to Create")
+            except model.DataModelException as ex:
+                raise request_error(exception=ex)
+
+    @require_fresh_login
+    @verify_not_prod
+    @nickname("changeUserQuota")
+    @validate_json_request("NewOrgQuota")
+    @require_scope(scopes.SUPERUSER)
+    def put(self, orgname):
+        if SuperUserPermission().can():
+            quota_data = request.get_json()
+
+            quota = model.namespacequota.get_namespace_quota(orgname)
+
+            if quota is None:
+                msg = "quota does not exist"
+                raise request_error(message=msg)
+
+            try:
+                model.namespacequota.change_namespace_quota(orgname, quota_data["limit_bytes"])
+                return "Updated", 201
+            except model.DataModelException as ex:
+                raise request_error(exception=ex)
+
+    @require_scope(scopes.SUPERUSER)
+    @nickname("deletUserQuota")
+    def delete(self, orgname):
+        if SuperUserPermission().can():
+            quota = model.namespacequota.get_namespace_quota(orgname)
+
+            if quota is None:
+                msg = "quota does not exist"
+                raise request_error(message=msg)
+
+            try:
+                success = model.namespacequota.delete_namespace_quota(orgname)
+                if success == 1:
+                    return "Deleted", 201
+
+                msg = "quota failed to delete"
+                raise request_error(message=msg)
+            except model.DataModelException as ex:
+                raise request_error(exception=ex)
+
+
 @resource("/v1/superuser/quota/")
 @internal_only
 @show_if(features.SUPER_USERS)

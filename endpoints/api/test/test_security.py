@@ -5800,20 +5800,23 @@ SECURITY_TESTS: List[
     (
         UserQuota,
         "GET",
-        {"orgname": "buynlarge"},
-        {"limit_bytes": 1, "bytes_unit": "GB"},
+        {},
+        {},
         None,
         401,
     ),
     (
         UserQuotaLimits,
         "GET",
-        {"orgname": "buynlarge"},
+        {},
         {},
         None,
         401,
     ),
     (UserQuotaReport, "GET", {"orgname": "buynlarge"}, {}, None, 401),
+    (SuperUserUserQuota, "POST", {"orgname": "buynlarge"}, {}, None, 401),
+    (SuperUserUserQuota, "PUT", {"orgname": "buynlarge"}, {}, None, 401),
+    (SuperUserUserQuota, "DELETE", {"orgname": "buynlarge"}, {}, None, 401),
 ]
 
 
