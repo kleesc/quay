@@ -29,6 +29,15 @@ class SecurityWorker(Worker):
         self.add_operation(self._index_in_scanner, interval)
 
     def _index_in_scanner(self):
+        try:
+            with GlobalLock(
+                "SECURITYWORKER_INDEX_RECENT_MANIFEST", lock_ttl=300, auto_renewal=True
+            ):
+                self._model.perform_indexing_recent_manifests()
+        except LockNotAcquiredException:
+            logger.warning("Could not acquire global lock for recent manifest indexing. Skipping")
+            pass
+
         self._next_token = self._model.perform_indexing(self._next_token)
 
 
