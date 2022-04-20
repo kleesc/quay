@@ -255,10 +255,11 @@ class V4SecurityScanner(SecurityScannerInterface):
             logger.warning(
                 "Could not acquire global lock for indexing (%s). Skipping" % str(start_token)
             )
+            min_id = Manifest.select(fn.Min(Manifest.id)).scalar() or 1
             return (
                 ScanToken(start_token.min_id + batch_size + 1)
                 if start_token
-                else ScanToken(Manifest.select(fn.Min(Manifest.id)).scalar() + batch_size + 1)
+                else ScanToken(min_id + batch_size + 1)
             )
 
     def perform_indexing_recent_manifests(self, batch_size=None):
@@ -274,7 +275,7 @@ class V4SecurityScanner(SecurityScannerInterface):
             seconds=self.app.config.get("SECURITY_SCANNER_V4_REINDEX_THRESHOLD", 86400)
         )
 
-        end_index = Manifest.select(fn.Max(Manifest.id)).scalar()
+        end_index = Manifest.select(fn.Max(Manifest.id)).scalar() or 1
         start_index = max(end_index - batch_size, 1)
 
         iterator = self._get_manifest_iterator(
@@ -300,12 +301,12 @@ class V4SecurityScanner(SecurityScannerInterface):
             seconds=self.app.config.get("SECURITY_SCANNER_V4_REINDEX_THRESHOLD", 86400)
         )
 
-        max_id = Manifest.select(fn.Max(Manifest.id)).scalar()
+        max_id = Manifest.select(fn.Max(Manifest.id)).scalar() or 1
 
         start_index = (
             start_token.min_id
             if start_token is not None
-            else Manifest.select(fn.Min(Manifest.id)).scalar()
+            else Manifest.select(fn.Min(Manifest.id)).scalar() or 1
         )
 
         # TODO(kleesc): Workaround to index recent manifests.
