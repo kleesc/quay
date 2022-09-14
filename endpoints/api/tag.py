@@ -216,7 +216,7 @@ class RepositoryTag(RepositoryParamResource):
 
         return "Updated", 201
 
-    @require_repo_write()
+    @require_repo_write(allow_for_superuser=True)
     @disallow_for_app_repositories
     @disallow_for_non_normal_repositories
     @nickname("deleteFullTag")

@@ -2,6 +2,7 @@
 Manage user and organization robot accounts.
 """
 from endpoints.api import (
+    allow_if_superuser,
     resource,
     nickname,
     ApiResource,
@@ -177,7 +178,7 @@ class OrgRobotList(ApiResource):
         List the organization's robots.
         """
         permission = OrganizationMemberPermission(orgname)
-        if permission.can():
+        if permission.can() or allow_if_superuser():
             include_token = AdministerOrganizationPermission(orgname).can() and parsed_args.get(
                 "token", True
             )

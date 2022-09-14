@@ -13,6 +13,7 @@ from flask import request, abort
 from app import dockerfile_build_queue, tuf_metadata_api, repository_gc_queue
 from data.database import RepositoryState
 from endpoints.api import (
+    allow_if_superuser,
     format_date,
     nickname,
     log_action,
@@ -136,7 +137,7 @@ class RepositoryList(ApiResource):
         namespace_name = req["namespace"] if "namespace" in req else owner.username
 
         permission = CreateRepositoryPermission(namespace_name)
-        if permission.can():
+        if permission.can() or allow_if_superuser():
             repository_name = req["repository"]
             visibility = req["visibility"]
 
@@ -392,7 +393,7 @@ class RepositoryVisibility(RepositoryParamResource):
         }
     }
 
-    @require_repo_admin()
+    @require_repo_admin(allow_for_superuser=True)
     @nickname("changeRepoVisibility")
     @validate_json_request("ChangeVisibility")
     def post(self, namespace, repository):
