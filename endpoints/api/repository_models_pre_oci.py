@@ -91,6 +91,7 @@ class PreOCIModel(RepositoryDataInterface):
         page_token,
         last_modified,
         popularity,
+        is_superuser,
     ):
         next_page_token = None
 
@@ -121,7 +122,7 @@ class PreOCIModel(RepositoryDataInterface):
                 limit=REPOS_PER_PAGE + 1,
                 kind_filter=repo_kind,
                 namespace=namespace,
-                is_superuser=allow_if_superuser()
+                is_superuser=is_superuser,
             )
 
             repos, next_page_token = model.modelutil.paginate_query(
