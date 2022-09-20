@@ -1251,6 +1251,7 @@ CONFIG_SCHEMA = {
             "type": "string",
             "description": "Enables IPv4, IPv6 or dual-stack networking. Defaults to `IPv4`.",
             "x-example": "IPv4",
+        },
         "FEATURE_SUPERUSERS_FULL_ACCESS": {
             "type": "boolean",
             "description": "Grant superusers full access to repositories, registry-wide",
