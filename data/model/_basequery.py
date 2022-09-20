@@ -90,7 +90,13 @@ def _lookup_team_roles():
 
 
 def filter_to_repos_for_user(
-    query, user_id=None, namespace=None, repo_kind="image", include_public=True, start_id=None, is_superuser=False
+    query,
+    user_id=None,
+    namespace=None,
+    repo_kind="image",
+    include_public=True,
+    start_id=None,
+    is_superuser=False,
 ):
     if not include_public and not user_id:
         return Repository.select().where(Repository.id == "-1")
