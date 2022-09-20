@@ -31,6 +31,7 @@ def test_change_install_user(client):
 
         assert result["email"] == body["email"]
 
+
 def test_list_repositories(client):
     with client_with_identity("devtable", client) as cl:
         params = {"namespace": "devtable"}

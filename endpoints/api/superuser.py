@@ -215,6 +215,7 @@ class SuperUserOrganizationList(ApiResource):
 
         raise Unauthorized()
 
+
 @resource("/v1/superuser/repositories/")
 @internal_only
 @show_if(features.SUPER_USERS)
@@ -249,7 +250,7 @@ class SuperUserRepositoryList(ApiResource):
 
             # We currently only support filtering by namespace due to performance impact,
             # This may change in the future
-            if (not parsed_args["namespace"]):
+            if not parsed_args["namespace"]:
                 raise InvalidRequest("namespace is required for this API call")
 
             current_user = get_authenticated_user()
@@ -273,6 +274,7 @@ class SuperUserRepositoryList(ApiResource):
             return {"repositories": [repo.to_dict() for repo in repos]}, next_page_token
 
         raise Unauthorized()
+
 
 @resource(
     "/v1/superuser/users/<namespace>/quota",
