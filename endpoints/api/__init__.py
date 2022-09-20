@@ -379,8 +379,7 @@ require_user_read = require_user_permission(UserReadPermission, scopes.READ_USER
 require_user_admin = require_user_permission(UserAdminPermission, scopes.ADMIN_USER)
 
 def allow_if_superuser():
-    user = get_authenticated_user()
-    return app.config.get("FEATURE_SUPERUSERS_FULL_ACCESS", False) and user is not None and SuperUserPermission().can() 
+    return app.config.get("FEATURE_SUPERUSERS_FULL_ACCESS", False) and SuperUserPermission().can()
 
 def verify_not_prod(func):
     @add_method_metadata("enterprise_only", True)

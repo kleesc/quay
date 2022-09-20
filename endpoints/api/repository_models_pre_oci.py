@@ -1,7 +1,6 @@
 from collections import defaultdict
 
 from datetime import datetime, timedelta
-from endpoints.api import allow_if_superuser
 
 import features
 from auth.permissions import ReadRepositoryPermission
