@@ -156,10 +156,13 @@ def _require_repo_permission(permission_class, scopes=None, allow_public=False):
                     context = get_authenticated_context()
 
                     if context is not None and context.authed_user is not None:
-                        if restricted_users.is_restricted(
-                            context.authed_user.username,
-                            include_robots=app.config["RESTRICTED_USER_INCLUDE_ROBOTS"],
-                        ) and not superusers.is_superuser(context.authed_user.username):
+                        if (
+                            restricted_users.is_restricted(
+                                context.authed_user.username,
+                                include_robots=app.config["RESTRICTED_USER_INCLUDE_ROBOTS"],
+                            )
+                            and not superusers.is_superuser(context.authed_user.username)
+                        ):
                             raise Unauthorized(detail="Disallowed for restricted users.")
 
                 permission = permission_class(namespace_name, repo_name)
