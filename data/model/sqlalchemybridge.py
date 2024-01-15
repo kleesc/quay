@@ -11,6 +11,7 @@ from peewee import (
     PrimaryKeyField,
     TextField,
 )
+from playhouse.postgres_ext import BinaryJSONField
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -26,6 +27,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 
 OPTIONS_TO_COPY = [
     "null",
@@ -105,6 +107,8 @@ def gen_sqlalchemy_metadata(peewee_model_list, legacy_index_map=None):
                 alchemy_type = BigInteger
             elif isinstance(field, IntegerField):
                 alchemy_type = Integer
+            elif isinstance(field, BinaryJSONField):
+                alchemy_type = JSONB
             else:
                 raise RuntimeError("Unknown column type: %s" % field)
 
