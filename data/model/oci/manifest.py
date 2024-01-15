@@ -178,6 +178,7 @@ def create_manifest(
             manifest_bytes=manifest.bytes.as_encoded_str(),
             config_media_type=manifest.config_media_type,
             layers_compressed_size=manifest.layers_compressed_size,
+            manifest_json=manifest.manifest_dict,
         )
     except IntegrityError as e:
         # NOTE: An IntegrityError means (barring a bug) that the manifest was created by

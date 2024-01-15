@@ -777,6 +777,7 @@ class DefaultConfig(ImmutableConfig):
 
     # TEMP FEATURE: Backfill the sizes of manifests.
     FEATURE_MANIFEST_SIZE_BACKFILL = True
+    FEATURE_MANIFEST_JSON_BACKFILL = True
 
     # Repos created by push default to private visibility
     CREATE_PRIVATE_REPO_ON_PUSH = True
