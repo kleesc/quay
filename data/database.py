@@ -12,6 +12,7 @@ from collections import defaultdict, namedtuple
 from contextlib import contextmanager
 from datetime import datetime
 from enum import Enum, IntEnum, unique
+from functools import lru_cache
 from random import SystemRandom
 
 import rehash
@@ -25,6 +26,7 @@ from playhouse.pool import (
     PooledPostgresqlDatabase,
     PooledSqliteDatabase,
 )
+from playhouse.postgres_ext import BinaryJSONField
 from sqlalchemy.engine.url import make_url
 
 from data.decorators import deprecated_model
@@ -683,6 +685,19 @@ class BaseModel(ReadReplicaSupportedModel):
                 return self.__data__.get(field_name)
 
         return super(BaseModel, self).__getattribute__(name)
+
+    @classmethod
+    @lru_cache(maxsize=1)
+    def _driver_name(cls):
+        driver_classname = type(db.obj).__name__.lower()
+        if driver_classname.find("mysql") >= 0:
+            return "mysql"
+        elif driver_classname.find("postgresql") >= 0:
+            return "postgresql"
+        elif driver_classname.find("sqlite") >= 0:
+            return "sqlite"
+
+        raise RuntimeError("Unknown database driver: %s", type(db.obj).__name__)
 
 
 class User(BaseModel):
@@ -1755,6 +1770,7 @@ class Manifest(BaseModel):
     subject_backfilled = BooleanField(default=False, index=True)
     artifact_type = CharField(null=True)
     artifact_type_backfilled = BooleanField(default=False, index=True)
+    manifest_json = BinaryJSONField()
 
     class Meta:
         database = db
@@ -1766,6 +1782,20 @@ class Manifest(BaseModel):
             (("repository", "subject"), False),
             (("repository", "artifact_type"), False),
         )
+
+    @classmethod
+    def create(cls, **query):
+        if query.get("manifest_json") and Manifest._driver_name() != "postgresql":
+            query.pop("manifest_json")
+
+        return super().create(**query)
+
+    @classmethod
+    def update(cls, **query):
+        if query.get("manifest_json") and Manifest._driver_name() != "postgresql":
+            query.pop("manifest_json")
+
+        return super().update(**query)
 
 
 class TagKind(BaseModel):

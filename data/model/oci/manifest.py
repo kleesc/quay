@@ -198,6 +198,7 @@ def create_manifest(
             artifact_type=manifest.artifact_type
             if manifest.artifact_type
             else None,  # TODO(kleesc): Remove once fully on JSONB only
+            manifest_json=manifest.manifest_dict,
         )
     except IntegrityError as e:
         # NOTE: An IntegrityError means (barring a bug) that the manifest was created by

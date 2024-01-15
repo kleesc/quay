@@ -329,6 +329,15 @@ command={% if hotreload -%}
   python -m workers.manifestsubjectbackfillworker
 {% endif -%}
 autostart = {{ config['manifestsubjectbackfillworker']['autostart'] }}
+[program:manifestjsonbackfillworker]
+environment=
+  PYTHONPATH=%(ENV_QUAYDIR)s
+command={% if hotreload -%}
+  gunicorn --timeout=600 -b 'unix:/tmp/manifestjsonbackfillworker.sock' -c %(ENV_QUAYCONF)s/gunicorn_worker.py 'workers.manifestjsonbackfillworker:create_gunicorn_worker()'
+{% else -%}
+  python -m workers.manifestjsonbackfillworker
+{% endif -%}
+autostart = {{ config['manifestjsonbackfillworker']['autostart'] }}
 stdout_events_enabled = true
 stderr_events_enabled = true
 
