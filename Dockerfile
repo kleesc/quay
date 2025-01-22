@@ -121,12 +121,24 @@ FROM registry.access.redhat.com/ubi8/ubi:latest AS pushgateway
 ENV OS=linux
 ARG PUSHGATEWAY_VERSION=1.6.0
 RUN set -ex\
-	; ARCH=$(uname -m) ; echo $ARCH \
-	; if [ "$ARCH" == "x86_64" ] ; then ARCH="amd64" ; elif [ "$ARCH" == "aarch64" ] ; then ARCH="arm64" ; fi \
-	; curl -fsSL "https://github.com/prometheus/pushgateway/releases/download/v${PUSHGATEWAY_VERSION}/pushgateway-${PUSHGATEWAY_VERSION}.${OS}-${ARCH}.tar.gz"\
-	| tar xz "pushgateway-${PUSHGATEWAY_VERSION}.${OS}-${ARCH}/pushgateway"\
-	; install "pushgateway-${PUSHGATEWAY_VERSION}.${OS}-${ARCH}/pushgateway" /usr/local/bin/pushgateway\
-	;
+    ; ARCH=$(uname -m) ; echo $ARCH \
+    ; if [ "$ARCH" == "x86_64" ] ; then ARCH="amd64" ; elif [ "$ARCH" == "aarch64" ] ; then ARCH="arm64" ; fi \
+    ; curl -fsSL "https://github.com/prometheus/pushgateway/releases/download/v${PUSHGATEWAY_VERSION}/pushgateway-${PUSHGATEWAY_VERSION}.${OS}-${ARCH}.tar.gz"\
+    | tar xz "pushgateway-${PUSHGATEWAY_VERSION}.${OS}-${ARCH}/pushgateway"\
+    ; install "pushgateway-${PUSHGATEWAY_VERSION}.${OS}-${ARCH}/pushgateway" /usr/local/bin/pushgateway\
+    ;
+
+# nginx-prometheus-exporter
+FROM registry.access.redhat.com/ubi8/ubi:latest AS nginx-prometheus-exporter
+ENV OS=linux
+ARG NGINX_PROMETHEUS_EXPORTER_VERSION=1.4.1
+RUN set -ex\
+    ; ARCH=$(uname -m) ; echo $ARCH \
+    ; if [ "$ARCH" == "x86_64" ] ; then ARCH="amd64" ; elif [ "$ARCH" == "aarch64" ] ; then ARCH="arm64" ; fi \
+    ; curl -fsSL "https://github.com/nginx/nginx-prometheus-exporter/releases/download/v${NGINX_PROMETHEUS_EXPORTER_VERSION}/nginx-prometheus-exporter_${NGINX_PROMETHEUS_EXPORTER_VERSION}_${OS}_${ARCH}.tar.gz"\
+    | tar xz "nginx-prometheus-exporter_${NGINX_PROMETHEUS_EXPORTER_VERSION}_${OS}_${ARCH}/nginx-prometheus-exporter"\
+    ; install "nginx-prometheus-exporter_${PUSHGATEWAY_VERSION}_${OS}_${ARCH}/nginx-prometheus-exporter" /usr/local/bin/nginx-prometheus-exporter \
+    ;
 
 # Config-tool builds the go binary in the configtool.
 FROM registry.access.redhat.com/ubi8/go-toolset as config-tool
