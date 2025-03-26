@@ -1798,6 +1798,15 @@ class Manifest(BaseModel):
         return super().update(**query)
 
 
+class Modelcard(BaseModel):
+    """
+    Indexed modelcard
+    """
+
+    manifest = ForeignKeyField(Manifest, unique=True)
+    tags = BinaryJSONField()
+
+
 class TagKind(BaseModel):
     """
     TagKind describes the various kinds of tags that can be found in the registry.
