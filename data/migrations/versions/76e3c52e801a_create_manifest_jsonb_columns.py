@@ -21,9 +21,19 @@ def upgrade(op, tables, tester):
             "manifest", sa.Column("manifest_json", postgresql.JSONB())
         )
 
+    op.create_table(
+        "modelcard",
+        sa.Column("id", sa.Integer, nullable=False),
+        sa.Column("manifest_id", sa.Integer, nullable=False),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_modelcard")),
+        sa.ForeignKeyConstraint(["manifest_id"], ["manifest.id"], name=op.f("fk_modelcard_manifest_id_manifest")),
+    )
+
 
 def downgrade(op, tables, tester):
     bind = op.get_bind()
 
     if bind.engine.name == "postgresql":
         op.drop_column("manifest", "manifest_json")
+
+    op.drop_table("modelcard")
