@@ -1,0 +1,4 @@
+encryptionsalt: v1:vmhtdhihrF8=:v1:5apiOBrqYrCKxcAS:QaeiM8Iqa6OJtwECEW02R6cdXYS9kw==
+config:
+  quayenv:testSecret:
+    secure: v1:SHe+RmQYh205KmXm:FDFPnDUuAoPk08B4CWFhGStcP4z4EuT5F9ED
