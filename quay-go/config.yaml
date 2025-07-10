@@ -1,0 +1,67 @@
+# Quay Workers Configuration
+
+# Database connection settings
+database:
+  host: localhost
+  port: 5432
+  user: quay
+  password: password
+  name: quay
+  ssl_mode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 5m
+
+# Redis connection settings (for distributed locking)
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+# Queue configuration
+queue:
+  namespace_gc:
+    name: "namespace_gc"
+    poll_period: 60s
+    timeout: 3h
+    lock_timeout_padding: 60s
+    max_retries: 5
+    chunk_size: 100
+  repository_gc:
+    name: "repository_gc"
+    poll_period: 60s
+    timeout: 3h
+    lock_timeout_padding: 60s
+    max_retries: 5
+    chunk_size: 100
+
+# Worker settings
+workers:
+  watchdog_period: 60s
+  metrics_interval: 30s
+  shutdown_timeout: 30s
+  max_workers: 1
+  gc_frequency: 30  # Garbage collection frequency in seconds
+
+# Metrics and monitoring
+metrics:
+  enabled: true
+  port: 8080
+  path: "/metrics"
+  namespace: "quay"
+
+# Logging configuration
+logging:
+  level: info      # debug, info, warn, error
+  format: console  # console, json
+
+# Feature flags
+features:
+  namespace_garbage_collection: true
+  repository_garbage_collection: true
+  garbage_collection: true
+  image_expiry_trigger: true
+  quota_management: false
+  security_scanning: false

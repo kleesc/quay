@@ -1,0 +1,209 @@
+# Quay Separate Workers Makefile
+
+# Build variables
+VERSION ?= $(shell git describe --tags --always --dirty)
+COMMIT ?= $(shell git rev-parse HEAD)
+BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)"
+
+# Go build settings
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+CGO_ENABLED ?= 0
+
+# Binary names and directories
+BINARY_DIR := bin
+GC_WORKER_BINARY := gcworker
+NAMESPACE_GC_WORKER_BINARY := namespacegcworker
+REPOSITORY_GC_WORKER_BINARY := repositorygcworker
+
+# Default target
+.PHONY: all
+all: build-all
+
+# Build all workers
+.PHONY: build-all
+build-all: build-gc build-namespace-gc build-repository-gc
+
+# Build GC worker
+.PHONY: build-gc
+build-gc:
+	@echo "Building $(GC_WORKER_BINARY) for $(GOOS)/$(GOARCH)..."
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o $(BINARY_DIR)/$(GC_WORKER_BINARY) ./cmd/gcworker
+
+# Build namespace GC worker
+.PHONY: build-namespace-gc
+build-namespace-gc:
+	@echo "Building $(NAMESPACE_GC_WORKER_BINARY) for $(GOOS)/$(GOARCH)..."
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o $(BINARY_DIR)/$(NAMESPACE_GC_WORKER_BINARY) ./cmd/namespacegcworker
+
+# Build repository GC worker
+.PHONY: build-repository-gc
+build-repository-gc:
+	@echo "Building $(REPOSITORY_GC_WORKER_BINARY) for $(GOOS)/$(GOARCH)..."
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o $(BINARY_DIR)/$(REPOSITORY_GC_WORKER_BINARY) ./cmd/repositorygcworker
+
+# Build for multiple platforms
+.PHONY: build-all-platforms
+build-all-platforms:
+	@echo "Building for multiple platforms..."
+	@make build-all GOOS=linux GOARCH=amd64
+	@make build-all GOOS=linux GOARCH=arm64
+	@make build-all GOOS=darwin GOARCH=amd64
+	@make build-all GOOS=darwin GOARCH=arm64
+
+# Run tests
+.PHONY: test
+test:
+	@echo "Running tests..."
+	go test -v -race -cover ./...
+
+# Run tests with coverage
+.PHONY: test-coverage
+test-coverage:
+	@echo "Running tests with coverage..."
+	go test -v -race -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+
+# Format code
+.PHONY: fmt
+fmt:
+	@echo "Formatting code..."
+	go fmt ./...
+	goimports -w .
+
+# Lint code
+.PHONY: lint
+lint:
+	@echo "Linting code..."
+	golangci-lint run ./...
+
+# Vet code
+.PHONY: vet
+vet:
+	@echo "Vetting code..."
+	go vet ./...
+
+# Tidy dependencies
+.PHONY: tidy
+tidy:
+	@echo "Tidying dependencies..."
+	go mod tidy
+
+# Download dependencies
+.PHONY: deps
+deps:
+	@echo "Downloading dependencies..."
+	go mod download
+
+# Clean build artifacts
+.PHONY: clean
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -rf $(BINARY_DIR)
+	rm -f coverage.out coverage.html
+
+# Install development tools
+.PHONY: install-tools
+install-tools:
+	@echo "Installing development tools..."
+	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+# Run GC worker
+.PHONY: run-gc
+run-gc: build-gc
+	@echo "Running GC worker..."
+	./$(BINARY_DIR)/$(GC_WORKER_BINARY) --config config.yaml
+
+# Run namespace GC worker
+.PHONY: run-namespace-gc
+run-namespace-gc: build-namespace-gc
+	@echo "Running namespace GC worker..."
+	./$(BINARY_DIR)/$(NAMESPACE_GC_WORKER_BINARY) --config config.yaml
+
+# Run repository GC worker
+.PHONY: run-repository-gc
+run-repository-gc: build-repository-gc
+	@echo "Running repository GC worker..."
+	./$(BINARY_DIR)/$(REPOSITORY_GC_WORKER_BINARY) --config config.yaml
+
+# Show version for all workers
+.PHONY: version
+version: build-all
+	@echo "Showing version for all workers..."
+	@echo "GC Worker:"
+	./$(BINARY_DIR)/$(GC_WORKER_BINARY) version
+	@echo "\nNamespace GC Worker:"
+	./$(BINARY_DIR)/$(NAMESPACE_GC_WORKER_BINARY) version
+	@echo "\nRepository GC Worker:"
+	./$(BINARY_DIR)/$(REPOSITORY_GC_WORKER_BINARY) version
+
+# Development setup
+.PHONY: dev-setup
+dev-setup: install-tools deps tidy fmt vet lint test
+
+# Docker build for GC worker
+.PHONY: docker-build-gc
+docker-build-gc:
+	@echo "Building Docker image for GC worker..."
+	docker build -f Dockerfile.gcworker -t quay-gcworker:$(VERSION) .
+
+# Docker build for namespace GC worker
+.PHONY: docker-build-namespace-gc
+docker-build-namespace-gc:
+	@echo "Building Docker image for namespace GC worker..."
+	docker build -f Dockerfile.namespacegcworker -t quay-namespacegcworker:$(VERSION) .
+
+# Docker build for repository GC worker
+.PHONY: docker-build-repository-gc
+docker-build-repository-gc:
+	@echo "Building Docker image for repository GC worker..."
+	docker build -f Dockerfile.repositorygcworker -t quay-repositorygcworker:$(VERSION) .
+
+# Docker build all
+.PHONY: docker-build-all
+docker-build-all: docker-build-gc docker-build-namespace-gc docker-build-repository-gc
+
+# Docker compose up (for local development)
+.PHONY: dev-up
+dev-up:
+	@echo "Starting development environment..."
+	docker-compose up -d postgres redis
+
+# Docker compose down
+.PHONY: dev-down
+dev-down:
+	@echo "Stopping development environment..."
+	docker-compose down
+
+# Help
+.PHONY: help
+help:
+	@echo "Available targets:"
+	@echo "  build-all              Build all workers"
+	@echo "  build-gc               Build GC worker"
+	@echo "  build-namespace-gc     Build namespace GC worker"
+	@echo "  build-repository-gc    Build repository GC worker"
+	@echo "  build-all-platforms    Build for multiple platforms"
+	@echo "  test                   Run tests"
+	@echo "  test-coverage          Run tests with coverage"
+	@echo "  fmt                    Format code"
+	@echo "  lint                   Lint code"
+	@echo "  vet                    Vet code"
+	@echo "  tidy                   Tidy dependencies"
+	@echo "  deps                   Download dependencies"
+	@echo "  clean                  Clean build artifacts"
+	@echo "  install-tools          Install development tools"
+	@echo "  run-gc                 Run GC worker"
+	@echo "  run-namespace-gc       Run namespace GC worker"
+	@echo "  run-repository-gc      Run repository GC worker"
+	@echo "  version                Show version for all workers"
+	@echo "  dev-setup              Setup development environment"
+	@echo "  docker-build-all       Build Docker images for all workers"
+	@echo "  dev-up                 Start development environment"
+	@echo "  dev-down               Stop development environment"
+	@echo "  help                   Show this help message"
