@@ -275,10 +275,17 @@ class V4SecurityScanner(SecurityScannerInterface):
     ):
         # TODO(alecmerdler): Filter out any `Manifests` that are still being uploaded
         def not_indexed_query():
-            return (
-                Manifest.select(Manifest, ManifestSecurityStatus, can_use_read_replica=True)
-                .join(ManifestSecurityStatus, JOIN.LEFT_OUTER)
-                .where(ManifestSecurityStatus.id >> None)
+            # Use NOT EXISTS for better performance on large tables vs LEFT JOIN
+            # NOT EXISTS is more efficient than LEFT JOIN + IS NULL as it:
+            # 1. Stops searching as soon as a match is found (short-circuits)
+            # 2. Avoids materializing the full outer join result set
+            # 3. Typically results in better query plans on large datasets
+            return Manifest.select(can_use_read_replica=True).where(
+                ~fn.EXISTS(
+                    ManifestSecurityStatus.select().where(
+                        ManifestSecurityStatus.manifest == Manifest.id
+                    )
+                )
             )
 
         def index_error_query():
