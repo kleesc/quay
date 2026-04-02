@@ -1,5 +1,4 @@
 import json
-import os
 import random
 import time
 import uuid
@@ -107,8 +106,6 @@ def _past_timestamp_ms(time_delta):
 
 # Tests for namespace autoprune policy
 def test_namespace_prune_multiple_repos_by_tag_count(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     new_policy = model.autoprune.create_namespace_autoprune_policy(
         "sellnsmall", {"method": "number_of_tags", "value": 5}, create_task=True
@@ -146,8 +143,6 @@ def test_namespace_prune_multiple_repos_by_tag_count(initialized_db):
 
 
 def test_namespace_prune_multiple_repos_by_creation_date(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     new_policy = model.autoprune.create_namespace_autoprune_policy(
         "sellnsmall", {"method": "creation_date", "value": "1w"}, create_task=True
@@ -186,8 +181,6 @@ def test_namespace_prune_multiple_repos_by_creation_date(initialized_db):
 
 
 def test_delete_autoprune_task_if_no_namespace_policy_exists(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     org = model.organization.get_organization("sellnsmall")
     model.autoprune.create_autoprune_task(org.id)
@@ -200,8 +193,6 @@ def test_delete_autoprune_task_if_no_namespace_policy_exists(initialized_db):
 
 
 def test_fetch_tasks_in_correct_order(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     # Start with an empty table
     for task in AutoPruneTaskStatus.select():
@@ -254,8 +245,6 @@ def test_fetch_tasks_in_correct_order(initialized_db):
 
 # Tests for repository autoprune policy
 def test_repository_prune_multiple_repos_by_tag_count(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     repo1 = model.repository.create_repository(
         "sellnsmall", "repo1", None, repo_kind="image", visibility="public"
@@ -294,8 +283,6 @@ def test_repository_prune_multiple_repos_by_tag_count(initialized_db):
 
 
 def test_repository_prune_multiple_repos_by_creation_date(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     repo1 = model.repository.create_repository(
         "sellnsmall", "repo1", None, repo_kind="image", visibility="public"
@@ -350,8 +337,6 @@ def test_repository_prune_multiple_repos_by_creation_date(initialized_db):
 
 
 def test_delete_autoprune_task_if_no_repository_policy_exists(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     org = model.organization.get_organization("sellnsmall")
     repo1 = model.repository.create_repository(
@@ -367,8 +352,6 @@ def test_delete_autoprune_task_if_no_repository_policy_exists(initialized_db):
 
 
 def test_nspolicy_tagcount_less_than_repopolicy_tagcount(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     ns_policy = model.autoprune.create_namespace_autoprune_policy(
         "sellnsmall", {"method": "number_of_tags", "value": 2}, create_task=True
@@ -409,8 +392,6 @@ def test_nspolicy_tagcount_less_than_repopolicy_tagcount(initialized_db):
 
 
 def test_repopolicy_tagcount_less_than_nspolicy_tagcount(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     ns_policy = model.autoprune.create_namespace_autoprune_policy(
         "sellnsmall", {"method": "number_of_tags", "value": 4}, create_task=True
@@ -450,8 +431,6 @@ def test_repopolicy_tagcount_less_than_nspolicy_tagcount(initialized_db):
 
 
 def test_nspolicy_timespan_older_than_repopolicy_timespan(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     ns_policy = model.autoprune.create_namespace_autoprune_policy(
         "sellnsmall", {"method": "creation_date", "value": "5d"}, create_task=True
@@ -498,8 +477,6 @@ def test_nspolicy_timespan_older_than_repopolicy_timespan(initialized_db):
 
 
 def test_repopolicy_timespan_older_than_nspolicy_timespan(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     ns_policy = model.autoprune.create_namespace_autoprune_policy(
         "sellnsmall", {"method": "creation_date", "value": "2d"}, create_task=True
@@ -546,8 +523,6 @@ def test_repopolicy_timespan_older_than_nspolicy_timespan(initialized_db):
 
 
 def test_nspolicy_tagcount_repopolicy_creation_date_reconcile(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     ns_policy = model.autoprune.create_namespace_autoprune_policy(
         "sellnsmall", {"method": "number_of_tags", "value": 6}, create_task=True
@@ -592,8 +567,6 @@ def test_nspolicy_tagcount_repopolicy_creation_date_reconcile(initialized_db):
 
 
 def test_nspolicy_creation_date_repopolicy_tagcount_reconcile(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     ns_policy = model.autoprune.create_namespace_autoprune_policy(
         "sellnsmall", {"method": "creation_date", "value": "3d"}, create_task=True
@@ -819,8 +792,6 @@ def test_registry_prune_invalid_policy(initialized_db):
     ],
 )
 def test_prune_by_tag_count_with_tag_filter(tags, expected, matches, initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     repo1 = model.repository.create_repository(
         "sellnsmall", "repo1", None, repo_kind="image", visibility="public"
@@ -901,8 +872,6 @@ def test_prune_by_tag_count_with_tag_filter(tags, expected, matches, initialized
     ],
 )
 def test_prune_by_creation_date_with_tag_filter(tags, expected, matches, initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     repo1 = model.repository.create_repository(
         "sellnsmall", "repo1", None, repo_kind="image", visibility="public"
@@ -944,8 +913,6 @@ def test_prune_by_creation_date_with_tag_filter(tags, expected, matches, initial
 
 
 def test_multiple_policies_for_namespace(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     ns_policy1 = model.autoprune.create_namespace_autoprune_policy(
         "sellnsmall",
@@ -1004,8 +971,6 @@ def test_multiple_policies_for_namespace(initialized_db):
 
 
 def test_multiple_policies_for_repository(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     repo1 = model.repository.create_repository(
         "sellnsmall", "repo1", None, repo_kind="image", visibility="public"
@@ -1108,8 +1073,6 @@ def test_multiple_policies_for_repository(initialized_db):
     ],
 )
 def test_policy_order(tags, expected, plcy1, plcy2, initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     repo1 = model.repository.create_repository(
         "sellnsmall", "repo1", None, repo_kind="image", visibility="public"
@@ -1164,8 +1127,6 @@ def test_policy_order(tags, expected, plcy1, plcy2, initialized_db):
 
 def test_prune_by_tag_count_excludes_immutable_tags(initialized_db):
     """Test that immutable tags are excluded from auto-prune by tag count."""
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     repo1 = model.repository.create_repository(
         "sellnsmall", "immutable_test_repo1", None, repo_kind="image", visibility="public"
@@ -1229,8 +1190,6 @@ def test_prune_by_tag_count_excludes_immutable_tags(initialized_db):
 
 def test_prune_by_creation_date_excludes_immutable_tags(initialized_db):
     """Test that immutable tags are excluded from auto-prune by creation date."""
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        model.autoprune.SKIP_LOCKED = False
 
     repo1 = model.repository.create_repository(
         "sellnsmall", "immutable_test_repo2", None, repo_kind="image", visibility="public"

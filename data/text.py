@@ -1,7 +1,6 @@
-import inspect
 import re
 
-from peewee import SQL, Field, NodeList, fn
+from peewee import SQL, Field, NodeList
 
 
 def _escape_wildcard(search_query):
@@ -28,27 +27,6 @@ def prefix_search(field, prefix_query):
     # Escape the known wildcard characters.
     prefix_query = _escape_wildcard(prefix_query)
     return Field.__pow__(field, NodeList((prefix_query + "%", SQL("ESCAPE '!'"))))
-
-
-def match_mysql(field, search_query):
-    """
-    Generates a full-text match query using a Match operation, which is needed for MySQL.
-    """
-    if field.name.find("`") >= 0:  # Just to be safe.
-        raise Exception("How did field name '%s' end up containing a backtick?" % field.name)
-
-    # Note: There is a known bug in MySQL (https://bugs.mysql.com/bug.php?id=78485) that causes
-    # queries of the form `*` to raise a parsing error. If found, simply filter out.
-    search_query = search_query.replace("*", "")
-
-    # Just to be absolutely sure.
-    search_query = search_query.replace("'", "")
-    search_query = search_query.replace('"', "")
-    search_query = search_query.replace("`", "")
-
-    return NodeList(
-        (fn.MATCH(SQL("`%s`" % field.name)), fn.AGAINST(SQL("%s", [search_query]))), parens=True
-    )
 
 
 def match_like(field, search_query):

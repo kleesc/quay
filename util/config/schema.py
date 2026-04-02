@@ -249,7 +249,7 @@ CONFIG_SCHEMA = {
         "DB_URI": {
             "type": "string",
             "description": "The URI at which to access the database, including any credentials.",
-            "x-example": "mysql+pymysql://username:password@dns.of.database/quay",
+            "x-example": "postgresql://username:password@dns.of.database/quay",
             "x-reference": "https://www.postgresql.org/docs/9.3/static/libpq-connect.html#AEN39495",
         },
         "DB_CONNECTION_ARGS": {

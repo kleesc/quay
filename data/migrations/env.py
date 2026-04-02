@@ -64,7 +64,7 @@ def get_engine():
     peewee_connection_args = app.config.get("DB_CONNECTION_ARGS", {})
     sa_connection_args = {}
 
-    # Include MySQL/MariaDB SSL configuration
+    # Include SSL configuration if present in peewee connection args
     if "ssl" in peewee_connection_args:
         sa_connection_args["ssl"] = peewee_connection_args["ssl"]
 

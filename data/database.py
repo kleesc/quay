@@ -22,14 +22,13 @@ from peewee import Function, __exception_wrapper__  # type: ignore
 from playhouse.pool import (
     MaxConnectionsExceeded,
     PooledDatabase,
-    PooledMySQLDatabase,
     PooledPostgresqlDatabase,
     PooledSqliteDatabase,
 )
 from sqlalchemy.engine.url import make_url
 
 from data.encryption import FieldEncrypter
-from data.estimate import mysql_estimate_row_count, normal_row_count
+from data.estimate import normal_row_count
 from data.fields import (
     Base64BinaryField,
     CredentialField,
@@ -49,7 +48,7 @@ from data.readreplica import (
     ReadReplicaSupportedModel,
     disallow_replica_use,
 )
-from data.text import match_like, match_mysql, regex_search, regex_sqlite
+from data.text import match_like, regex_search, regex_sqlite
 from util.metrics.prometheus import (
     db_close_calls,
     db_connect_calls,
@@ -73,8 +72,6 @@ IMAGE_NOT_SCANNED_ENGINE_VERSION = -1
 schemedriver = namedtuple("schemedriver", ["driver", "pooled_driver"])
 
 _SCHEME_DRIVERS = {
-    "mysql": schemedriver(MySQLDatabase, PooledMySQLDatabase),
-    "mysql+pymysql": schemedriver(MySQLDatabase, PooledMySQLDatabase),
     "sqlite": schemedriver(SqliteDatabase, PooledSqliteDatabase),
     "postgresql": schemedriver(PostgresqlDatabase, PooledPostgresqlDatabase),
     "postgresql+psycopg2": schemedriver(PostgresqlDatabase, PooledPostgresqlDatabase),
@@ -82,8 +79,6 @@ _SCHEME_DRIVERS = {
 
 
 SCHEME_MATCH_FUNCTION = {
-    "mysql": match_mysql,
-    "mysql+pymysql": match_mysql,
     "sqlite": match_like,
     "postgresql": match_like,
     "postgresql+psycopg2": match_like,
@@ -95,8 +90,6 @@ SCHEME_REGEX_FUNCTION = {
 
 
 SCHEME_RANDOM_FUNCTION = {
-    "mysql": fn.Rand,
-    "mysql+pymysql": fn.Rand,
     "sqlite": fn.Random,
     "postgresql": fn.Random,
     "postgresql+psycopg2": fn.Random,
@@ -104,8 +97,6 @@ SCHEME_RANDOM_FUNCTION = {
 
 
 SCHEME_ESTIMATOR_FUNCTION = {
-    "mysql": mysql_estimate_row_count,
-    "mysql+pymysql": mysql_estimate_row_count,
     "sqlite": normal_row_count,
     "postgresql": normal_row_count,
     "postgresql+psycopg2": normal_row_count,
@@ -118,10 +109,7 @@ PRECONDITION_VALIDATION = {
 }
 
 
-_EXTRA_ARGS = {
-    "mysql": dict(charset="utf8mb4"),
-    "mysql+pymysql": dict(charset="utf8mb4"),
-}
+_EXTRA_ARGS = {}
 
 
 def pipes_concat(arg1, arg2, *extra_args):
@@ -311,12 +299,6 @@ class RetryOperationalError(object):
             cursor = super(RetryOperationalError, self).execute_sql(sql, params, commit)
         except (OperationalError, InterfaceError) as pe:
             if isinstance(pe, InterfaceError) and not str(pe) == "(0, '')":
-                # InterfaceError("(0, '')") is raised by PyMySQL after a connection has been idle for longer
-                # than the MySQL database's interactive_timeout setting.
-                # This can happen on some workers without work to be done for a long time.
-                # This causes Peewee to be unable to reuse its stale connection.
-                # Instead, the peewee connection needs to be closed, and a new session opened with MySQL.
-                # https://github.com/PyMySQL/PyMySQL/blob/main/pymysql/connections.py#L1354
                 raise
 
             if self.in_transaction():
@@ -660,11 +642,6 @@ def _db_from_url(
     created = driver(parsed_url.database, **db_kwargs)
     if driver_autocommit:
         created.connect_params["autocommit"] = driver_autocommit
-
-    # Revert the behavior "fixed" in:
-    # https://github.com/coleifer/peewee/commit/36bd887ac07647c60dfebe610b34efabec675706
-    if parsed_url.drivername.find("mysql") >= 0:
-        created.compound_select_parentheses = 0
 
     return created
 

@@ -1,6 +1,5 @@
 import datetime
 import json
-import os
 import time
 
 import pytest
@@ -166,8 +165,6 @@ def test_fetch_notified_tag_ids_for_event(initial_set):
 
 
 def test_fetch_active_notification(initial_set, new_notification):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        util.notification.SKIP_LOCKED = False
 
     # causing the event to failure
     for i in range(3):
@@ -195,8 +192,7 @@ def test_fetch_active_notification(initial_set, new_notification):
 
 
 def test_scan_for_image_expiry_notifications(initial_set):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        util.notification.SKIP_LOCKED = False
+
     future_ms = (datetime.datetime.now() + datetime.timedelta(days=1)).timestamp() * 1000
     for tag in initial_set["tags"]:
         set_tag_end_ms(tag, future_ms)
@@ -342,8 +338,7 @@ def test_list_repo_notifications(initial_set):
 def test_notifications_with_namespace_autoprune_policy(
     tags, expected, policy1, policy2, initialized_db
 ):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        util.notification.SKIP_LOCKED = False
+
     slack = ExternalNotificationMethod.get(ExternalNotificationMethod.name == "slack")
     image_expiry_event = ExternalNotificationEvent.get(
         ExternalNotificationEvent.name == "repo_image_expiry"
@@ -435,8 +430,7 @@ def test_notifications_with_namespace_autoprune_policy(
 def test_notifications_with_repository_autoprune_policy(
     tags, expected, policy1, policy2, initialized_db
 ):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        util.notification.SKIP_LOCKED = False
+
     slack = ExternalNotificationMethod.get(ExternalNotificationMethod.name == "slack")
     image_expiry_event = ExternalNotificationEvent.get(
         ExternalNotificationEvent.name == "repo_image_expiry"
@@ -512,8 +506,7 @@ def test_notifications_with_repository_autoprune_policy(
 
 
 def test_notifications_with_no_tags_expiring_by_autoprune_policy(initialized_db):
-    if "mysql+pymysql" in os.environ.get("TEST_DATABASE_URI", ""):
-        util.notification.SKIP_LOCKED = False
+
     slack = ExternalNotificationMethod.get(ExternalNotificationMethod.name == "slack")
     image_expiry_event = ExternalNotificationEvent.get(
         ExternalNotificationEvent.name == "repo_image_expiry"

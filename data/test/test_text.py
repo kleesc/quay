@@ -3,21 +3,7 @@ from test.fixtures import *
 import pytest
 
 from data.database import Repository
-from data.text import match_like, match_mysql
-
-
-@pytest.mark.parametrize(
-    "input",
-    [
-        ("hello world"),
-        ("hello ' world"),
-        ('hello " world'),
-        ("hello ` world"),
-    ],
-)
-def test_mysql_text_escaping(input):
-    query, values = Repository.select().where(match_mysql(Repository.description, input)).sql()
-    assert input not in query
+from data.text import match_like
 
 
 @pytest.mark.parametrize(
