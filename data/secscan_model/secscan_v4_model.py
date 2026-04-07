@@ -38,6 +38,10 @@ from data.secscan_model.interface import (
     SecurityScannerInterface,
 )
 from image.docker.schema1 import DOCKER_SCHEMA1_CONTENT_TYPES
+from image.docker.schema2 import DOCKER_SCHEMA2_LAYER_CONTENT_TYPE
+from image.docker.schema2.manifest import DockerV2ManifestImageLayer
+from image.oci import OCI_IMAGE_LAYER_CONTENT_TYPES
+from image.oci.manifest import OCIManifestImageLayer
 from util.metrics.prometheus import secscan_result_duration
 from util.secscan import (
     PRIORITY_LEVELS,
@@ -112,10 +116,6 @@ def _has_container_layers(layers):
     Checks if the layers are proper container image layers. For images that do not contain image layers, such as
     Singularity containers, Helm charts, artifacts and similar, we skip the scanning process.
     """
-    from image.docker.schema2 import DOCKER_SCHEMA2_LAYER_CONTENT_TYPE
-    from image.docker.schema2.manifest import DockerV2ManifestImageLayer
-    from image.oci import OCI_IMAGE_LAYER_CONTENT_TYPES
-    from image.oci.manifest import OCIManifestImageLayer
 
     CONTAINER_LAYER_TYPES = set(OCI_IMAGE_LAYER_CONTENT_TYPES + [DOCKER_SCHEMA2_LAYER_CONTENT_TYPE])
 
@@ -436,7 +436,7 @@ class V4SecurityScanner(SecurityScannerInterface):
         )
         lowest_severity = PRIORITY_LEVELS[level]
 
-        import notifications
+        import notifications  # circular import if moved to top level
 
         logger.debug("Attempting to create notifications for manifest %s", manifest)
 
