@@ -1,11 +1,9 @@
-import itertools
 import logging
 import urllib
 from collections import namedtuple
 from datetime import datetime, timedelta
-from math import log10
 
-from peewee import JOIN, fn
+from peewee import JOIN, Case, IntegrityError, fn
 
 import features
 from data.cache import cache_key
@@ -14,6 +12,7 @@ from data.database import (
     IndexStatus,
     Manifest,
     ManifestSecurityStatus,
+    db_for_update,
     db_transaction,
     get_epoch_timestamp_ms,
 )
@@ -40,7 +39,6 @@ from data.secscan_model.interface import (
 )
 from image.docker.schema1 import DOCKER_SCHEMA1_CONTENT_TYPES
 from util.metrics.prometheus import secscan_result_duration
-from util.migrate.allocator import yield_random_entries
 from util.secscan import (
     PRIORITY_LEVELS,
     fetch_vuln_severity,
@@ -59,6 +57,7 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_SECURITY_SCANNER_V4_REINDEX_THRESHOLD = 86400  # 1 day
+STALE_IN_PROGRESS_HOURS = 6  # Hours before an IN_PROGRESS manifest is considered stale
 TAG_LIMIT = 100
 
 IndexReportState = namedtuple("IndexReportState", ["Index_Finished", "Index_Error"])(  # type: ignore[call-arg]
@@ -89,7 +88,7 @@ class NoopV4SecurityScanner(SecurityScannerInterface):
         return None
 
     def perform_indexing_recent_manifests(self, batch_size=None):
-        return None
+        pass
 
     def register_model_cleanup_callbacks(self, data_model_config):
         pass
@@ -242,7 +241,7 @@ class V4SecurityScanner(SecurityScannerInterface):
                 ScanLookupStatus.MANIFEST_LAYER_TOO_LARGE
             )
 
-        if status.index_status == IndexStatus.IN_PROGRESS:
+        if status.index_status in (IndexStatus.IN_PROGRESS, IndexStatus.QUEUED):
             return SecurityInformationLookupResult.with_status(ScanLookupStatus.NOT_YET_INDEXED)
 
         assert status.index_status == IndexStatus.COMPLETED
@@ -270,100 +269,8 @@ class V4SecurityScanner(SecurityScannerInterface):
             SecurityInformation(Layer(report["manifest_hash"], "", "", 4, features_for(report)))
         )
 
-    def _get_manifest_iterator(
-        self, indexer_state, min_id, max_id, batch_size=None, reindex_threshold=None
-    ):
-        # TODO(alecmerdler): Filter out any `Manifests` that are still being uploaded
-        def not_indexed_query():
-            return Manifest.select(can_use_read_replica=True).where(
-                ~fn.EXISTS(
-                    ManifestSecurityStatus.select().where(
-                        ManifestSecurityStatus.manifest == Manifest.id
-                    )
-                )
-            )
-
-        def index_error_query():
-            return (
-                Manifest.select(Manifest, ManifestSecurityStatus, can_use_read_replica=True)
-                .join(ManifestSecurityStatus)
-                .where(
-                    ManifestSecurityStatus.index_status == IndexStatus.FAILED,
-                    ManifestSecurityStatus.last_indexed < reindex_threshold
-                    or DEFAULT_SECURITY_SCANNER_V4_REINDEX_THRESHOLD,
-                )
-            )
-
-        def needs_reindexing_query(indexer_hash):
-            return (
-                Manifest.select(Manifest, ManifestSecurityStatus, can_use_read_replica=True)
-                .join(ManifestSecurityStatus)
-                .where(
-                    ManifestSecurityStatus.index_status != IndexStatus.MANIFEST_UNSUPPORTED,
-                    ManifestSecurityStatus.index_status != IndexStatus.MANIFEST_LAYER_TOO_LARGE,
-                    ManifestSecurityStatus.indexer_hash != indexer_hash,
-                    ManifestSecurityStatus.last_indexed < reindex_threshold
-                    or DEFAULT_SECURITY_SCANNER_V4_REINDEX_THRESHOLD,
-                )
-            )
-
-        # 4^log10(total) gives us a scalable batch size into the billions.
-        if not batch_size:
-            batch_size = int(4 ** log10(max(10, max_id - min_id)))
-
-        iterator = itertools.chain(
-            yield_random_entries(
-                not_indexed_query,
-                Manifest.id,
-                batch_size,
-                max_id,
-                min_id,
-            ),
-            yield_random_entries(
-                index_error_query,
-                Manifest.id,
-                batch_size,
-                max_id,
-                min_id,
-            ),
-            yield_random_entries(
-                lambda: needs_reindexing_query(indexer_state.get("state", "")),
-                Manifest.id,
-                batch_size,
-                max_id,
-                min_id,
-            ),
-        )
-
-        return iterator
-
     def perform_indexing_recent_manifests(self, batch_size=None):
-        try:
-            indexer_state = self._secscan_api.state()
-        except APIRequestFailure:
-            return None
-
-        if not batch_size:
-            batch_size = self.app.config.get("SECURITY_SCANNER_V4_BATCH_SIZE", 0)
-
-        reindex_threshold = datetime.utcnow() - timedelta(
-            seconds=self.app.config.get("SECURITY_SCANNER_V4_REINDEX_THRESHOLD", 86400)
-        )
-
-        end_index = Manifest.select(fn.Max(Manifest.id), can_use_read_replica=True).scalar()
-        if end_index is None:
-            end_index = 0
-        start_index = max(end_index - batch_size, 1)
-
-        iterator = self._get_manifest_iterator(
-            indexer_state,
-            start_index,
-            end_index,
-            batch_size=max(batch_size // 20, 1),
-            reindex_threshold=reindex_threshold,
-        )
-
-        self._index(iterator, reindex_threshold)
+        pass
 
     def perform_indexing(self, start_token=None, batch_size=None):
         try:
@@ -372,289 +279,292 @@ class V4SecurityScanner(SecurityScannerInterface):
             return None
 
         if not batch_size:
-            batch_size = self.app.config.get("SECURITY_SCANNER_V4_BATCH_SIZE", 0)
+            batch_size = self.app.config.get("SECURITY_SCANNER_V4_BATCH_SIZE", 50)
 
         reindex_threshold = datetime.utcnow() - timedelta(
-            seconds=self.app.config.get("SECURITY_SCANNER_V4_REINDEX_THRESHOLD", 86400)
+            seconds=self.app.config.get(
+                "SECURITY_SCANNER_V4_REINDEX_THRESHOLD",
+                DEFAULT_SECURITY_SCANNER_V4_REINDEX_THRESHOLD,
+            )
         )
 
-        max_id = Manifest.select(fn.Max(Manifest.id), can_use_read_replica=True).scalar()
+        while True:
+            self._enqueue_manifests(batch_size)
+            claimed = self._claim_manifests(batch_size, reindex_threshold, indexer_state)
+            if not claimed:
+                break
+            self._process_claimed(claimed)
 
-        start_index = (
-            start_token.min_id
-            if start_token is not None
-            else Manifest.select(fn.Min(Manifest.id), can_use_read_replica=True).scalar()
-        )
+        return ScanToken(0)
 
-        if max_id is None or start_index is None or start_index > max_id:
-            return None
-
-        iterator = self._get_manifest_iterator(
-            indexer_state,
-            start_index,
-            max_id,
-            batch_size=batch_size,
-            reindex_threshold=reindex_threshold,
-        )
-
-        self._index(iterator, reindex_threshold)
-
-        return ScanToken(max_id + 1)
-
-    def _index(self, iterator, reindex_threshold):
-        def mark_manifest_unsupported(manifest):
-            with db_transaction():
-                ManifestSecurityStatus.delete().where(
-                    ManifestSecurityStatus.manifest == manifest._db_id,
-                    ManifestSecurityStatus.repository == manifest.repository._db_id,
-                ).execute()
-                ManifestSecurityStatus.create(
-                    manifest=manifest._db_id,
-                    repository=manifest.repository._db_id,
-                    index_status=IndexStatus.MANIFEST_UNSUPPORTED,
-                    indexer_hash="none",
-                    indexer_version=IndexerVersion.V4,
-                    metadata_json={},
+    def _enqueue_manifests(self, batch_size):
+        """
+        Find manifests without a ManifestSecurityStatus row and insert them
+        with QUEUED status. Uses ON CONFLICT DO NOTHING so concurrent workers
+        inserting the same manifest are harmless.
+        """
+        candidates = list(
+            Manifest.select(Manifest.id, Manifest.repository)
+            .where(
+                ~fn.EXISTS(
+                    ManifestSecurityStatus.select(ManifestSecurityStatus.id).where(
+                        ManifestSecurityStatus.manifest == Manifest.id
+                    )
                 )
+            )
+            .order_by(Manifest.id.desc())
+            .limit(batch_size)
+        )
 
-        def mark_manifest_layer_too_large(manifest):
-            with db_transaction():
-                ManifestSecurityStatus.delete().where(
-                    ManifestSecurityStatus.manifest == manifest._db_id,
-                    ManifestSecurityStatus.repository == manifest.repository._db_id,
-                ).execute()
-                ManifestSecurityStatus.create(
-                    manifest=manifest._db_id,
-                    repository=manifest.repository._db_id,
-                    index_status=IndexStatus.MANIFEST_LAYER_TOO_LARGE,
-                    indexer_hash="none",
-                    indexer_version=IndexerVersion.V4,
-                    metadata_json={},
+        if not candidates:
+            return 0
+
+        rows = [
+            {
+                ManifestSecurityStatus.manifest: c.id,
+                ManifestSecurityStatus.repository: c.repository_id,
+                ManifestSecurityStatus.index_status: IndexStatus.QUEUED,
+                ManifestSecurityStatus.indexer_hash: "",
+                ManifestSecurityStatus.indexer_version: IndexerVersion.V4,
+                ManifestSecurityStatus.metadata_json: {},
+                ManifestSecurityStatus.error_json: {},
+            }
+            for c in candidates
+        ]
+
+        ManifestSecurityStatus.insert_many(rows).on_conflict_ignore().execute()
+        return len(candidates)
+
+    def _claim_manifests(self, batch_size, reindex_threshold, indexer_state):
+        """
+        Atomically claim a batch of manifests for scanning using
+        FOR UPDATE SKIP LOCKED. Returns claimed ManifestSecurityStatus rows.
+
+        Priority order: QUEUED -> FAILED -> stale IN_PROGRESS -> needs reindex.
+        """
+        stale_threshold = datetime.utcnow() - timedelta(hours=STALE_IN_PROGRESS_HOURS)
+        indexer_hash = indexer_state.get("state", "")
+
+        claimable = (
+            (ManifestSecurityStatus.index_status == IndexStatus.QUEUED)
+            | (
+                (ManifestSecurityStatus.index_status == IndexStatus.FAILED)
+                & (ManifestSecurityStatus.last_indexed < reindex_threshold)
+            )
+            | (
+                (ManifestSecurityStatus.index_status == IndexStatus.IN_PROGRESS)
+                & (ManifestSecurityStatus.last_indexed < stale_threshold)
+            )
+            | (
+                (
+                    ManifestSecurityStatus.index_status.not_in(
+                        [
+                            IndexStatus.MANIFEST_UNSUPPORTED,
+                            IndexStatus.MANIFEST_LAYER_TOO_LARGE,
+                            IndexStatus.QUEUED,
+                        ]
+                    )
                 )
+                & (ManifestSecurityStatus.indexer_hash != indexer_hash)
+                & (ManifestSecurityStatus.last_indexed < reindex_threshold)
+            )
+        )
 
-        def batch_preemption_check(candidate_ids):
-            """
-            Bulk check which manifest IDs have been recently indexed by another worker.
-            Returns a set of manifest IDs that should be skipped.
+        priority = Case(
+            None,
+            [
+                (ManifestSecurityStatus.index_status == IndexStatus.QUEUED, 0),
+                (ManifestSecurityStatus.index_status == IndexStatus.FAILED, 1),
+                (ManifestSecurityStatus.index_status == IndexStatus.IN_PROGRESS, 2),
+            ],
+            3,
+        )
 
-            This replaces individual should_skip_indexing() calls with a single bulk query,
-            reducing database round-trips by 50-100x per batch.
-            """
-            if not candidate_ids:
-                return set()
+        with db_transaction():
+            query = (
+                ManifestSecurityStatus.select()
+                .where(claimable)
+                .order_by(priority.asc(), ManifestSecurityStatus.manifest.desc())
+                .limit(batch_size)
+            )
+            claimed = list(db_for_update(query, skip_locked=True))
 
-            # Single query to check all candidates at once
-            recently_indexed = ManifestSecurityStatus.select(
-                ManifestSecurityStatus.manifest_id
-            ).where(
-                ManifestSecurityStatus.manifest_id.in_(candidate_ids),
-                ManifestSecurityStatus.last_indexed >= reindex_threshold,
+            if not claimed:
+                return []
+
+            claimed_ids = [c.id for c in claimed]
+            ManifestSecurityStatus.update(
+                index_status=IndexStatus.IN_PROGRESS,
+                indexer_hash="in_progress",
+                last_indexed=datetime.utcnow(),
+            ).where(ManifestSecurityStatus.id.in_(claimed_ids)).execute()
+
+        return claimed
+
+    def _update_status(self, mss, index_status, indexer_hash, error_json=None):
+        """
+        Update ManifestSecurityStatus to final state. Simple UPDATE replaces
+        the previous DELETE+INSERT pattern.
+        """
+        ManifestSecurityStatus.update(
+            index_status=index_status,
+            indexer_hash=indexer_hash,
+            indexer_version=IndexerVersion.V4,
+            error_json=error_json or {},
+            metadata_json={},
+            last_indexed=datetime.utcnow(),
+        ).where(ManifestSecurityStatus.id == mss.id).execute()
+
+    def _maybe_notify_new_vulnerabilities(self, manifest):
+        """
+        If configured, fetch the vulnerability report and emit notifications
+        for vulnerabilities meeting the minimum severity threshold.
+        """
+        if not features.SECURITY_SCANNER_NOTIFY_ON_NEW_INDEX:
+            return
+
+        try:
+            vulnerability_report = self._secscan_api.vulnerability_report(manifest.digest)
+        except APIRequestFailure:
+            return
+
+        if vulnerability_report is None:
+            return
+
+        found_vulnerabilities = vulnerability_report.get("vulnerabilities")
+        if found_vulnerabilities is None:
+            return
+
+        level = (
+            self.app.config.get("NOTIFICATION_MIN_SEVERITY_ON_NEW_INDEX")
+            if self.app.config.get("NOTIFICATION_MIN_SEVERITY_ON_NEW_INDEX")
+            else "High"
+        )
+        lowest_severity = PRIORITY_LEVELS[level]
+
+        import notifications
+
+        logger.debug("Attempting to create notifications for manifest %s", manifest)
+
+        for key in list(found_vulnerabilities):
+            vuln = found_vulnerabilities[key]
+            found_severity = PRIORITY_LEVELS.get(
+                vuln["normalized_severity"], PRIORITY_LEVELS["Unknown"]
             )
 
-            return {row.manifest_id for row in recently_indexed}
+            if found_severity["score"] >= lowest_severity["score"]:
+                tag_names = list(
+                    registry_model.tag_names_for_manifest(manifest, TAG_LIMIT)
+                )
+                event_data = {
+                    "tags": list(tag_names) if tag_names else [manifest.digest],
+                    "vulnerable_index_report_created": "true",
+                    "vulnerability": {
+                        "id": vuln["id"],
+                        "description": vuln["description"],
+                        "link": vuln["links"],
+                        "priority": vuln["severity"],
+                        "has_fix": bool(vuln["fixed_in_version"]),
+                    },
+                }
 
-        def batched_iterator_with_preemption_check(iterator, batch_size=20):
-            """
-            Wrapper that collects candidates into batches and performs bulk preemption checks.
-            Yields (candidate, abt, num_remaining, should_skip) tuples.
-            """
-            batch = []
-            for item in iterator:
-                batch.append(item)
+                logger.debug("Created notification with event_data: %s", event_data)
+                notifications.spawn_notification(
+                    manifest.repository, "vulnerability_found", event_data
+                )
 
-                if len(batch) >= batch_size:
-                    # Bulk check for this batch
-                    candidate_ids = [c.id for c, _, _ in batch]
-                    preempted_ids = batch_preemption_check(candidate_ids)
+    def _process_claimed(self, claimed_rows):
+        """
+        Process each claimed manifest: validate, scan via Clair, update status.
+        """
+        for mss in claimed_rows:
+            try:
+                candidate = Manifest.get(Manifest.id == mss.manifest_id)
+            except Manifest.DoesNotExist:
+                ManifestSecurityStatus.delete().where(
+                    ManifestSecurityStatus.id == mss.id
+                ).execute()
+                continue
 
-                    # Yield each item with preemption status
-                    for candidate, abt, num_remaining in batch:
-                        should_skip = candidate.id in preempted_ids
-                        yield candidate, abt, num_remaining, should_skip
-
-                    batch = []
-
-            # Process remaining items
-            if batch:
-                candidate_ids = [c.id for c, _, _ in batch]
-                preempted_ids = batch_preemption_check(candidate_ids)
-
-                for candidate, abt, num_remaining in batch:
-                    should_skip = candidate.id in preempted_ids
-                    yield candidate, abt, num_remaining, should_skip
-
-        for candidate, abt, num_remaining, should_skip in batched_iterator_with_preemption_check(
-            iterator
-        ):
             manifest = ManifestDataType.for_manifest(candidate, None)
+
             if manifest.is_manifest_list:
-                mark_manifest_unsupported(manifest)
+                self._update_status(mss, IndexStatus.MANIFEST_UNSUPPORTED, "none")
                 continue
 
             layers = registry_model.list_manifest_layers(manifest, self.storage, True)
 
             if layers is None or len(layers) == 0:
                 logger.warning(
-                    "Cannot index %s/%s@%s due to manifest being invalid (manifest has no layers)"
-                    % (
-                        candidate.repository.namespace_user,
-                        candidate.repository.name,
-                        manifest.digest,
-                    )
-                )
-                mark_manifest_unsupported(manifest)
-                continue
-
-            # We need to verify that the image layers are actual container images. Since Docker v2 schema 1 images
-            # cannot be anything other than container images, for them specifically we should skip the layer check.
-            if manifest.media_type not in DOCKER_SCHEMA1_CONTENT_TYPES:
-                if not _has_container_layers(layers):
-                    logger.info(
-                        "Cannot index %s/%s@%s due to manifest being invalid (manifest appears to be an artifact image)"
-                        % (
-                            candidate.repository.namespace_user,
-                            candidate.repository.name,
-                            manifest.digest,
-                        )
-                    )
-                    mark_manifest_unsupported(manifest)
-                    continue
-
-            # Check preemption status (computed via bulk query in batch)
-            if should_skip:
-                logger.debug("Manifest %d preempted by another worker (batch check)", candidate.id)
-                abt.set()
-                continue
-
-            logger.debug(
-                "Indexing manifest [%d] %s/%s@%s"
-                % (
-                    manifest._db_id,
+                    "Cannot index %s/%s@%s: manifest has no layers",
                     candidate.repository.namespace_user,
                     candidate.repository.name,
                     manifest.digest,
                 )
+                self._update_status(mss, IndexStatus.MANIFEST_UNSUPPORTED, "none")
+                continue
+
+            if manifest.media_type not in DOCKER_SCHEMA1_CONTENT_TYPES:
+                if not _has_container_layers(layers):
+                    logger.info(
+                        "Cannot index %s/%s@%s: appears to be an artifact image",
+                        candidate.repository.namespace_user,
+                        candidate.repository.name,
+                        manifest.digest,
+                    )
+                    self._update_status(mss, IndexStatus.MANIFEST_UNSUPPORTED, "none")
+                    continue
+
+            logger.debug(
+                "Indexing manifest [%d] %s/%s@%s",
+                manifest._db_id,
+                candidate.repository.namespace_user,
+                candidate.repository.name,
+                manifest.digest,
             )
 
             try:
                 (report, state) = self._secscan_api.index(manifest, layers)
-            except InvalidContentSent as ex:
-                mark_manifest_unsupported(manifest)
+            except InvalidContentSent:
+                self._update_status(mss, IndexStatus.MANIFEST_UNSUPPORTED, "none")
                 logger.exception("Failed to perform indexing, invalid content sent")
                 continue
             except APIRequestFailure as ex:
+                self._update_status(
+                    mss, IndexStatus.FAILED, "api_failure", {"error": str(ex)}
+                )
                 logger.exception("Failed to perform indexing, security scanner API error")
                 continue
-            except LayerTooLargeException as ex:
-                mark_manifest_layer_too_large(manifest)
+            except LayerTooLargeException:
+                self._update_status(mss, IndexStatus.MANIFEST_LAYER_TOO_LARGE, "none")
                 logger.exception("Failed to perform indexing, layer too large")
                 continue
 
             if report["state"] == IndexReportState.Index_Finished:
-                index_status = IndexStatus.COMPLETED
-                # record time to get results if manifest has just been uploaded
+                self._update_status(mss, IndexStatus.COMPLETED, state, report["err"])
+
                 if not manifest.has_been_scanned:
                     created_at = manifest.created_at
-
                     if created_at is not None:
                         dur_ms = get_epoch_timestamp_ms() - created_at
                         dur_sec = dur_ms / 1000
                         secscan_result_duration.observe(dur_sec)
 
-                    if features.SECURITY_SCANNER_NOTIFY_ON_NEW_INDEX:
-                        try:
-                            vulnerability_report = self._secscan_api.vulnerability_report(
-                                manifest.digest
-                            )
-                        except APIRequestFailure:
-                            vulnerability_report = None
-
-                        found_vulnerabilities = None
-                        if vulnerability_report is not None:
-                            found_vulnerabilities = vulnerability_report.get("vulnerabilities")
-
-                        # Current implementation creates events for all detected vulnerabilities, including vulnerabilities that are low
-                        # or unknown severity, which makes the whole thing a bit pointless. We'll filter out all vulnerabilities that aren't
-                        # high or critical.
-                        level = (
-                            self.app.config.get("NOTIFICATION_MIN_SEVERITY_ON_NEW_INDEX")
-                            if self.app.config.get("NOTIFICATION_MIN_SEVERITY_ON_NEW_INDEX")
-                            else "High"
-                        )
-                        lowest_severity = PRIORITY_LEVELS[level]
-
-                        if found_vulnerabilities is not None:
-                            import notifications
-
-                            logger.debug(
-                                "Attempting to create notifications for manifest %s", manifest
-                            )
-
-                            keys = list(found_vulnerabilities)
-                            for key in keys:
-                                vuln = found_vulnerabilities[key]
-
-                                found_severity = PRIORITY_LEVELS.get(
-                                    vuln["normalized_severity"], PRIORITY_LEVELS["Unknown"]
-                                )
-
-                                if found_severity["score"] >= lowest_severity["score"]:
-                                    tag_names = list(
-                                        registry_model.tag_names_for_manifest(manifest, TAG_LIMIT)
-                                    )
-                                    if tag_names:
-                                        event_data = {
-                                            "tags": list(tag_names),
-                                            "vulnerable_index_report_created": "true",
-                                            "vulnerability": {
-                                                "id": vuln["id"],
-                                                "description": vuln["description"],
-                                                "link": vuln["links"],
-                                                "priority": vuln["severity"],
-                                                "has_fix": bool(vuln["fixed_in_version"]),
-                                            },
-                                        }
-
-                                    else:
-                                        event_data = {
-                                            "tags": [
-                                                manifest.digest,
-                                            ],
-                                            "vulnerable_index_report_created": "true",
-                                            "vulnerability": {
-                                                "id": vuln["id"],
-                                                "description": vuln["description"],
-                                                "link": vuln["links"],
-                                                "priority": vuln["severity"],
-                                                "has_fix": bool(vuln["fixed_in_version"]),
-                                            },
-                                        }
-
-                                    logger.debug(
-                                        "Created notification with event_data: %s", event_data
-                                    )
-                                    notifications.spawn_notification(
-                                        manifest.repository, "vulnerability_found", event_data
-                                    )
+                    self._maybe_notify_new_vulnerabilities(manifest)
 
             elif report["state"] == IndexReportState.Index_Error:
-                index_status = IndexStatus.FAILED
+                self._update_status(mss, IndexStatus.FAILED, state, report["err"])
             else:
-                # Unknown state don't save anything
-                continue
-
-            with db_transaction():
-                ManifestSecurityStatus.delete().where(
-                    ManifestSecurityStatus.manifest == candidate
-                ).execute()
-                ManifestSecurityStatus.create(
-                    manifest=candidate,
-                    repository=candidate.repository,
-                    error_json=report["err"],
-                    index_status=index_status,
-                    indexer_hash=state,
-                    indexer_version=IndexerVersion.V4,
-                    metadata_json={},
+                self._update_status(
+                    mss,
+                    IndexStatus.FAILED,
+                    "unknown_state",
+                    {"error": "unknown_state", "state": report.get("state")},
+                )
+                logger.warning(
+                    "Unknown index state '%s' for manifest %d, marked as FAILED",
+                    report.get("state"),
+                    candidate.id,
                 )
 
     def lookup_notification_page(self, notification_id, page_index=None):

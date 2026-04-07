@@ -9,9 +9,7 @@ from data.secscan_model.datatypes import (
     ScanLookupStatus,
     SecurityInformationLookupResult,
 )
-from data.secscan_model.secscan_v4_model import IndexReportState
-from data.secscan_model.secscan_v4_model import ScanToken as V4ScanToken
-from data.secscan_model.secscan_v4_model import V4SecurityScanner
+from data.secscan_model.secscan_v4_model import IndexReportState, ScanToken
 from test.fixtures import *
 
 from app import app as flask_app  # isort: skip
@@ -49,15 +47,7 @@ def test_load_security_information(indexed_v4, expected_status, initialized_db):
     assert result.status == expected_status
 
 
-@pytest.mark.parametrize(
-    "next_token, expected_next_token, expected_error",
-    [
-        (None, V4ScanToken(58), None),
-        (V4ScanToken(None), V4ScanToken(58), AssertionError),
-        (V4ScanToken(1), V4ScanToken(58), None),
-    ],
-)
-def test_perform_indexing(next_token, expected_next_token, expected_error, initialized_db):
+def test_perform_indexing(initialized_db):
     flask_app.config["SECURITY_SCANNER_V4_ENDPOINT"] = "http://clairv4:6060"
 
     def secscan_api(*args, **kwargs):
@@ -71,8 +61,5 @@ def test_perform_indexing(next_token, expected_next_token, expected_error, initi
     with patch("data.secscan_model.secscan_v4_model.ClairSecurityScannerAPI", secscan_api):
         secscan_model.configure(flask_app, instance_keys, storage)
 
-        if expected_error is not None:
-            with pytest.raises(expected_error):
-                secscan_model.perform_indexing(next_token)
-        else:
-            assert secscan_model.perform_indexing(next_token) == expected_next_token
+        result = secscan_model.perform_indexing()
+        assert isinstance(result, ScanToken)

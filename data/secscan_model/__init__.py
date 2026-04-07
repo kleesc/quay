@@ -8,9 +8,7 @@ from data.secscan_model.interface import (
     InvalidConfigurationException,
     SecurityScannerInterface,
 )
-from data.secscan_model.secscan_v4_model import NoopV4SecurityScanner
-from data.secscan_model.secscan_v4_model import ScanToken as V4ScanToken
-from data.secscan_model.secscan_v4_model import V4SecurityScanner
+from data.secscan_model.secscan_v4_model import NoopV4SecurityScanner, V4SecurityScanner
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +27,6 @@ class SecurityScannerModelProxy(SecurityScannerInterface):
         return self
 
     def perform_indexing(self, next_token=None, batch_size=None):
-        if next_token is not None:
-            assert isinstance(next_token, V4ScanToken)
-            assert isinstance(next_token.min_id, int)
-
         return self._model.perform_indexing(next_token, batch_size)
 
     def perform_indexing_recent_manifests(self, batch_size=None):

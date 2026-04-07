@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 
 import mock
 import pytest
-from peewee import fn
 
 from app import app as application
 from app import instance_keys, storage
@@ -20,7 +19,6 @@ from data.database import (
     ManifestBlob,
     ManifestSecurityStatus,
     MediaType,
-    db_transaction,
 )
 from data.registry_model import registry_model
 from data.registry_model.datatypes import ManifestLayer, RepositoryReference
@@ -57,6 +55,8 @@ from image.oci import (
 from initdb import create_schema2_or_oci_manifest_for_testing
 from test.fixtures import *
 from util.secscan.v4.api import APIRequestFailure
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture()
@@ -233,9 +233,10 @@ def test_perform_indexing_whitelist(initialized_db, set_secscan_config):
     secscan.perform_indexing_recent_manifests()
     next_token = secscan.perform_indexing()
 
-    assert next_token.min_id == Manifest.select(fn.Max(Manifest.id)).scalar() + 1
+    assert next_token is not None
 
     manifest_count = Manifest.select().count()
+
     assert secscan._secscan_api.index.call_count >= manifest_count
     assert ManifestSecurityStatus.select().count() == manifest_count
     for mss in ManifestSecurityStatus.select():
@@ -368,90 +369,6 @@ def test_perform_indexing_needs_reindexing_skippable(
         assert mss.indexer_hash == "old hash"
 
 
-@pytest.mark.parametrize(
-    "index_status, indexer_state, seconds, expect_zero",
-    [
-        # Unsupported manifest, never rescan
-        (
-            IndexStatus.MANIFEST_UNSUPPORTED,
-            {"status": "old hash"},
-            application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"] + 60,
-            True,
-        ),
-        # Old hash and recent scan, don't rescan
-        (IndexStatus.COMPLETED, {"status": "old hash"}, 0, True),
-        # old hash and old scan, rescan
-        (
-            IndexStatus.COMPLETED,
-            {"status": "old hash"},
-            application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"] + 60,
-            False,
-        ),
-        # New hash and old scan, don't rescan
-        (
-            IndexStatus.COMPLETED,
-            {"status": "new hash"},
-            application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"] + 60,
-            False,
-        ),
-        # New hash and recent scan, don't rescan
-        (IndexStatus.FAILED, {"status": "old hash"}, 0, True),
-        # Old hash and old scan, rescan
-        (
-            IndexStatus.FAILED,
-            {"status": "old hash"},
-            application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"] + 60,
-            False,
-        ),
-        # New hash and old scan, rescan
-        (
-            IndexStatus.FAILED,
-            {"status": "new hash"},
-            application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"] + 60,
-            False,
-        ),
-    ],
-)
-def test_manifest_iterator(
-    initialized_db, set_secscan_config, index_status, indexer_state, seconds, expect_zero
-):
-    secscan = V4SecurityScanner(application, instance_keys, storage)
-
-    for manifest in Manifest.select():
-        with db_transaction():
-            ManifestSecurityStatus.delete().where(
-                ManifestSecurityStatus.manifest == manifest,
-                ManifestSecurityStatus.repository == manifest.repository,
-            ).execute()
-            ManifestSecurityStatus.create(
-                manifest=manifest,
-                repository=manifest.repository,
-                error_json={},
-                index_status=index_status,
-                indexer_hash="old hash",
-                indexer_version=IndexerVersion.V4,
-                last_indexed=datetime.utcnow() - timedelta(seconds=seconds),
-                metadata_json={},
-            )
-
-    iterator = secscan._get_manifest_iterator(
-        indexer_state,
-        Manifest.select(fn.Min(Manifest.id)).scalar(),
-        Manifest.select(fn.Max(Manifest.id)).scalar(),
-        reindex_threshold=datetime.utcnow()
-        - timedelta(seconds=application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"]),
-    )
-
-    count = 0
-    for candidate, abt, num_remaining in iterator:
-        count = count + 1
-
-    if expect_zero:
-        assert count == 0
-    else:
-        assert count != 0
-
-
 def test_perform_indexing_needs_reindexing_within_reindex_threshold(
     initialized_db, set_secscan_config
 ):
@@ -508,8 +425,8 @@ def test_perform_indexing_api_request_index_error_response(initialized_db, set_s
 
     secscan.perform_indexing_recent_manifests()
     next_token = secscan.perform_indexing()
-    assert next_token.min_id == Manifest.select(fn.Max(Manifest.id)).scalar() + 1
-    assert ManifestSecurityStatus.select().count() == Manifest.select(fn.Max(Manifest.id)).count()
+    assert next_token is not None
+    assert ManifestSecurityStatus.select().count() == Manifest.select().count()
     for mss in ManifestSecurityStatus.select():
         assert mss.index_status == IndexStatus.FAILED
 
@@ -525,8 +442,14 @@ def test_perform_indexing_api_request_non_finished_state(initialized_db, set_sec
 
     secscan.perform_indexing_recent_manifests()
     next_token = secscan.perform_indexing()
-    assert next_token and next_token.min_id == Manifest.select(fn.Max(Manifest.id)).scalar() + 1
-    assert ManifestSecurityStatus.select().count() == 0
+    assert next_token is not None
+
+    # Manifests with unknown state should be marked as FAILED instead of deleted
+    # This preserves scan history and allows retry
+    assert ManifestSecurityStatus.select().count() > 0
+    for status in ManifestSecurityStatus.select():
+        assert status.index_status == IndexStatus.FAILED
+        assert status.indexer_hash == "unknown_state"
 
 
 def test_perform_indexing_api_request_failure_index(initialized_db, set_secscan_config):
@@ -539,8 +462,14 @@ def test_perform_indexing_api_request_failure_index(initialized_db, set_secscan_
     secscan.perform_indexing_recent_manifests()
     next_token = secscan.perform_indexing()
 
-    assert next_token and next_token.min_id == Manifest.select(fn.Max(Manifest.id)).scalar() + 1
-    assert ManifestSecurityStatus.select().count() == 0
+    assert next_token is not None
+
+    # Manifests with API failures should be marked as FAILED instead of deleted
+    # This preserves scan history and allows retry
+    assert ManifestSecurityStatus.select().count() > 0
+    for status in ManifestSecurityStatus.select():
+        assert status.index_status == IndexStatus.FAILED
+        assert status.indexer_hash == "api_failure"
 
     # Set security scanner to return good results and attempt indexing again
     secscan._secscan_api.index.side_effect = None
@@ -552,8 +481,8 @@ def test_perform_indexing_api_request_failure_index(initialized_db, set_secscan_
     secscan.perform_indexing_recent_manifests()
     next_token = secscan.perform_indexing()
 
-    assert next_token.min_id == Manifest.select(fn.Max(Manifest.id)).scalar() + 1
-    assert ManifestSecurityStatus.select().count() == Manifest.select(fn.Max(Manifest.id)).count()
+    assert next_token is not None
+    assert ManifestSecurityStatus.select().count() == Manifest.select().count()
 
 
 def test_features_for():
@@ -1097,265 +1026,93 @@ def test_perform_indexing_oci_manifest(initialized_db, set_secscan_config):
     assert mss.index_status == IndexStatus.COMPLETED
 
 
-def test_batch_preemption_check(initialized_db, set_secscan_config):
+def test_claim_skips_recently_completed(initialized_db, set_secscan_config):
     """
-    Test that batch preemption checking correctly identifies manifests that have been
-    recently indexed and should be skipped by the worker.
+    Test that _claim_manifests does not claim recently completed manifests
+    (only claims manifests that are QUEUED, FAILED+stale, stale IN_PROGRESS,
+    or needing reindex).
     """
     secscan = V4SecurityScanner(application, instance_keys, storage)
+    secscan._secscan_api = mock.Mock()
+    secscan._secscan_api.state.return_value = {"state": "abc"}
+
     reindex_threshold = datetime.utcnow() - timedelta(
         seconds=application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"]
     )
 
-    # Get all manifests
-    manifests = list(Manifest.select())
-    assert len(manifests) > 0
-
-    # Create security status for some manifests with different timestamps
-    # Manifests 0-2: recently indexed (should be skipped)
-    for i in range(min(3, len(manifests))):
+    # Mark all manifests as recently completed with matching hash
+    for manifest in Manifest.select():
         ManifestSecurityStatus.create(
-            manifest=manifests[i],
-            repository=manifests[i].repository,
+            manifest=manifest,
+            repository=manifest.repository,
             error_json={},
             index_status=IndexStatus.COMPLETED,
             indexer_hash="abc",
             indexer_version=IndexerVersion.V4,
-            last_indexed=datetime.utcnow(),  # Recent
+            last_indexed=datetime.utcnow(),
             metadata_json={},
         )
 
-    # Manifests 3-5: old indexing (should be reindexed)
-    if len(manifests) > 3:
-        for i in range(3, min(6, len(manifests))):
-            ManifestSecurityStatus.create(
-                manifest=manifests[i],
-                repository=manifests[i].repository,
-                error_json={},
-                index_status=IndexStatus.COMPLETED,
-                indexer_hash="abc",
-                indexer_version=IndexerVersion.V4,
-                last_indexed=reindex_threshold - timedelta(seconds=100),  # Old
-                metadata_json={},
-            )
-
-    # Manifests 6+: not indexed at all (should be indexed)
-
-    # Test batch preemption check
-    all_manifest_ids = [m.id for m in manifests]
-    recently_indexed_ids = [manifests[i].id for i in range(min(3, len(manifests)))]
-
-    # Call the internal batch_preemption_check through _index method
-    # We'll create a simple iterator and inspect results
-    from threading import Event
-
-    def simple_iterator():
-        for m in manifests:
-            yield m, Event(), 0
-
-    # Access the batch_preemption_check function by calling _index with a mock
-    secscan._secscan_api = mock.Mock()
-    secscan._secscan_api.state.return_value = {"state": "abc"}
-    secscan._secscan_api.vulnerability_report.return_value = {"vulnerabilities": {}}
-
-    # Test that recently indexed manifests are skipped
-    indexed_count = 0
-
-    # Patch the index method to count calls instead of actually indexing
-    def count_index(*args, **kwargs):
-        nonlocal indexed_count
-        indexed_count += 1
-        return ({"err": None, "state": IndexReportState.Index_Finished}, "abc")
-
-    secscan._secscan_api.index = count_index
-
-    # Run indexing
-    secscan._index(simple_iterator(), reindex_threshold)
-
-    # Verify that recently indexed manifests were skipped
-    # We expect: 3 skipped (recently indexed), rest processed
-    # Note: Some manifests may be manifest lists or invalid, so actual count may be lower
-    # The key is that indexed_count should be less than total because some were skipped
-    assert indexed_count < len(
-        manifests
-    ), f"Expected some manifests to be skipped, but indexed {indexed_count} out of {len(manifests)}"
+    # Claim should return nothing — all are recently completed with matching hash
+    claimed = secscan._claim_manifests(50, reindex_threshold, {"state": "abc"})
+    assert len(claimed) == 0
 
 
-def test_batched_iterator_with_preemption_check(initialized_db, set_secscan_config):
+def test_enqueue_creates_queued_rows(initialized_db, set_secscan_config):
     """
-    Test the batched_iterator_with_preemption_check wrapper function that processes
-    candidates in micro-batches to reduce database queries.
+    Test that _enqueue_manifests creates QUEUED rows for manifests without status.
     """
     secscan = V4SecurityScanner(application, instance_keys, storage)
-    reindex_threshold = datetime.utcnow() - timedelta(
-        seconds=application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"]
-    )
 
-    # Create test manifests with different statuses
-    manifests = list(Manifest.select().limit(25))  # Get 25 manifests for testing batching
+    assert ManifestSecurityStatus.select().count() == 0
 
-    if len(manifests) < 25:
-        # Need at least 25 for proper batch testing
-        pytest.skip("Not enough manifests for batch testing")
+    enqueued = secscan._enqueue_manifests(100)
+    assert enqueued > 0
+    assert ManifestSecurityStatus.select().count() == enqueued
 
-    # Mark some as recently indexed
-    for i in range(10):
-        with db_transaction():
-            ManifestSecurityStatus.delete().where(
-                ManifestSecurityStatus.manifest == manifests[i]
-            ).execute()
-            ManifestSecurityStatus.create(
-                manifest=manifests[i],
-                repository=manifests[i].repository,
-                error_json={},
-                index_status=IndexStatus.COMPLETED,
-                indexer_hash="recent",
-                indexer_version=IndexerVersion.V4,
-                last_indexed=datetime.utcnow(),  # Recent - should skip
-                metadata_json={},
-            )
+    for mss in ManifestSecurityStatus.select():
+        assert mss.index_status == IndexStatus.QUEUED
 
-    # Create iterator
-    from threading import Event
 
-    def test_iterator():
-        for m in manifests:
-            yield m, Event(), len(manifests)
+def test_enqueue_idempotent(initialized_db, set_secscan_config):
+    """
+    Test that running _enqueue_manifests twice does not create duplicate rows.
+    """
+    secscan = V4SecurityScanner(application, instance_keys, storage)
 
-    # Alternative: Test by running _index and verifying behavior
+    first_count = secscan._enqueue_manifests(100)
+    second_count = secscan._enqueue_manifests(100)
+
+    # Second call should find no new manifests to enqueue
+    assert ManifestSecurityStatus.select().count() == first_count
+
+
+def test_second_indexing_pass_is_noop(initialized_db, set_secscan_config):
+    """
+    Test that a second perform_indexing call does not re-index manifests
+    that were already completed in the first pass.
+    """
+    secscan = V4SecurityScanner(application, instance_keys, storage)
     secscan._secscan_api = mock.Mock()
-    secscan._secscan_api.state.return_value = {"state": "test"}
     secscan._secscan_api.vulnerability_report.return_value = {"vulnerabilities": {}}
+    secscan._secscan_api.state.return_value = {"state": "test"}
     secscan._secscan_api.index.return_value = (
         {"err": None, "state": IndexReportState.Index_Finished},
         "test",
     )
 
-    # Count how many manifests get indexed vs skipped
-    indexed_count = 0
-    original_index_method = secscan._secscan_api.index
+    # Run indexing until all manifests are covered
+    secscan.perform_indexing()
+    secscan.perform_indexing()
 
-    def counting_index(*args, **kwargs):
-        nonlocal indexed_count
-        indexed_count += 1
-        return original_index_method(*args, **kwargs)
+    manifest_count = Manifest.select().count()
+    assert ManifestSecurityStatus.select().count() == manifest_count
 
-    secscan._secscan_api.index = counting_index
+    # A third run should produce zero new index calls
+    index_count_before = secscan._secscan_api.index.call_count
+    secscan.perform_indexing()
+    index_count_after = secscan._secscan_api.index.call_count
 
-    # Run indexing
-    secscan._index(test_iterator(), reindex_threshold)
-
-    # Verify that batching worked - some manifests were skipped
-    # We marked 10 as recently indexed, so they should be skipped
-    assert indexed_count < len(
-        manifests
-    ), f"Expected some skipped, but indexed {indexed_count}/{len(manifests)}"
-
-
-def test_batch_preemption_empty_and_edge_cases(initialized_db, set_secscan_config):
-    """
-    Test edge cases for batch preemption checking: empty batches, single items, etc.
-    """
-    secscan = V4SecurityScanner(application, instance_keys, storage)
-    reindex_threshold = datetime.utcnow() - timedelta(
-        seconds=application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"]
+    assert index_count_after == index_count_before, (
+        f"Third pass re-indexed {index_count_after - index_count_before} manifests"
     )
-
-    from threading import Event
-
-    # Test 1: Empty iterator
-    def empty_iterator():
-        return
-        yield  # Make it a generator
-
-    secscan._secscan_api = mock.Mock()
-    secscan._secscan_api.state.return_value = {"state": "test"}
-    secscan._secscan_api.vulnerability_report.return_value = {"vulnerabilities": {}}
-
-    # Should not crash with empty iterator
-    secscan._index(empty_iterator(), reindex_threshold)
-
-    # Test 2: Single manifest
-    manifests = list(Manifest.select().limit(1))
-    if manifests:
-
-        def single_iterator():
-            yield manifests[0], Event(), 1
-
-        secscan._secscan_api.index.return_value = (
-            {"err": None, "state": IndexReportState.Index_Finished},
-            "test",
-        )
-        secscan._index(single_iterator(), reindex_threshold)
-
-        # Verify it was processed (may be marked as unsupported if it's a manifest list)
-        assert (
-            ManifestSecurityStatus.select()
-            .where(ManifestSecurityStatus.manifest == manifests[0])
-            .count()
-            > 0
-        )
-
-
-def test_batch_preemption_reduces_queries(initialized_db, set_secscan_config):
-    """
-    Integration test verifying that batch preemption checking actually reduces
-    the number of database queries compared to individual checks.
-    """
-    secscan = V4SecurityScanner(application, instance_keys, storage)
-    reindex_threshold = datetime.utcnow() - timedelta(
-        seconds=application.config["SECURITY_SCANNER_V4_REINDEX_THRESHOLD"]
-    )
-
-    # Create 50 manifests for a realistic batch
-    manifests = list(Manifest.select().limit(50))
-
-    if len(manifests) < 50:
-        pytest.skip("Not enough manifests for query reduction testing")
-
-    # Mark half as recently indexed
-    for i in range(25):
-        with db_transaction():
-            ManifestSecurityStatus.delete().where(
-                ManifestSecurityStatus.manifest == manifests[i]
-            ).execute()
-            ManifestSecurityStatus.create(
-                manifest=manifests[i],
-                repository=manifests[i].repository,
-                error_json={},
-                index_status=IndexStatus.COMPLETED,
-                indexer_hash="test",
-                indexer_version=IndexerVersion.V4,
-                last_indexed=datetime.utcnow(),
-                metadata_json={},
-            )
-
-    from threading import Event
-
-    def test_iterator():
-        for m in manifests:
-            yield m, Event(), len(manifests)
-
-    secscan._secscan_api = mock.Mock()
-    secscan._secscan_api.state.return_value = {"state": "test"}
-    secscan._secscan_api.vulnerability_report.return_value = {"vulnerabilities": {}}
-    secscan._secscan_api.index.return_value = (
-        {"err": None, "state": IndexReportState.Index_Finished},
-        "test",
-    )
-
-    secscan._index(test_iterator(), reindex_threshold)
-
-    # Verify that recently indexed manifests still have original hash
-    # (they were skipped, so hash wasn't updated)
-    still_test_hash = 0
-    for i in range(25):
-        try:
-            mss = ManifestSecurityStatus.get(ManifestSecurityStatus.manifest == manifests[i].id)
-            if mss.indexer_hash == "test":
-                still_test_hash += 1
-        except ManifestSecurityStatus.DoesNotExist:
-            pass
-
-    # Most of the 25 recently indexed should still have "test" hash (they were skipped)
-    assert still_test_hash >= 20, f"Expected at least 20 skipped manifests, got {still_test_hash}"
