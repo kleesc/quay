@@ -230,7 +230,7 @@ def test_perform_indexing_whitelist(initialized_db, set_secscan_config):
         "abc",
     )
 
-    secscan.perform_indexing_recent_manifests()
+
     next_token = secscan.perform_indexing()
 
     assert next_token is not None
@@ -265,7 +265,7 @@ def test_perform_indexing_failed(initialized_db, set_secscan_config):
             metadata_json={},
         )
 
-    secscan.perform_indexing_recent_manifests()
+
     secscan.perform_indexing()
 
     assert ManifestSecurityStatus.select().count() == Manifest.select().count()
@@ -295,7 +295,7 @@ def test_perform_indexing_failed_within_reindex_threshold(initialized_db, set_se
             metadata_json={},
         )
 
-    secscan.perform_indexing_recent_manifests()
+
     secscan.perform_indexing()
 
     assert ManifestSecurityStatus.select().count() == Manifest.select().count()
@@ -325,7 +325,7 @@ def test_perform_indexing_needs_reindexing(initialized_db, set_secscan_config):
             metadata_json={},
         )
 
-    secscan.perform_indexing_recent_manifests()
+
     secscan.perform_indexing()
 
     assert ManifestSecurityStatus.select().count() == Manifest.select().count()
@@ -360,7 +360,7 @@ def test_perform_indexing_needs_reindexing_skippable(
             metadata_json={},
         )
 
-    secscan.perform_indexing_recent_manifests()
+
     secscan.perform_indexing()
 
     # Since this manifest should not be scanned, the old hash should remain
@@ -393,7 +393,7 @@ def test_perform_indexing_needs_reindexing_within_reindex_threshold(
             metadata_json={},
         )
 
-    secscan.perform_indexing_recent_manifests()
+
     secscan.perform_indexing()
 
     assert ManifestSecurityStatus.select().count() == Manifest.select().count()
@@ -407,7 +407,7 @@ def test_perform_indexing_api_request_failure_state(initialized_db, set_secscan_
     secscan._secscan_api.state.side_effect = APIRequestFailure()
     secscan._secscan_api.vulnerability_report.return_value = {"vulnerabilities": []}
 
-    secscan.perform_indexing_recent_manifests()
+
     next_token = secscan.perform_indexing()
 
     assert next_token is None
@@ -423,7 +423,7 @@ def test_perform_indexing_api_request_index_error_response(initialized_db, set_s
         "xyz",
     )
 
-    secscan.perform_indexing_recent_manifests()
+
     next_token = secscan.perform_indexing()
     assert next_token is not None
     assert ManifestSecurityStatus.select().count() == Manifest.select().count()
@@ -440,7 +440,7 @@ def test_perform_indexing_api_request_non_finished_state(initialized_db, set_sec
         "xyz",
     )
 
-    secscan.perform_indexing_recent_manifests()
+
     next_token = secscan.perform_indexing()
     assert next_token is not None
 
@@ -459,7 +459,7 @@ def test_perform_indexing_api_request_failure_index(initialized_db, set_secscan_
     secscan._secscan_api.index.side_effect = APIRequestFailure()
     secscan._secscan_api.vulnerability_report.return_value = {"vulnerabilities": []}
 
-    secscan.perform_indexing_recent_manifests()
+
     next_token = secscan.perform_indexing()
 
     assert next_token is not None
@@ -478,7 +478,7 @@ def test_perform_indexing_api_request_failure_index(initialized_db, set_secscan_
         "abc",
     )
 
-    secscan.perform_indexing_recent_manifests()
+
     next_token = secscan.perform_indexing()
 
     assert next_token is not None
@@ -557,7 +557,7 @@ def test_perform_indexing_invalid_manifest(initialized_db, set_secscan_config):
     # Delete all ManifestBlob rows to cause the manifests to be invalid.
     ManifestBlob.delete().execute()
 
-    secscan.perform_indexing_recent_manifests()
+
     secscan.perform_indexing()
 
     assert ManifestSecurityStatus.select().count() == Manifest.select().count()
@@ -658,7 +658,7 @@ def test_perform_indexing_manifest_list(initialized_db, set_secscan_config):
     secscan = V4SecurityScanner(application, instance_keys, storage)
     secscan._secscan_api = mock.Mock()
 
-    secscan.perform_indexing_recent_manifests()
+
     secscan.perform_indexing()
 
     assert ManifestSecurityStatus.select().count() == Manifest.select().count()

@@ -29,9 +29,6 @@ class SecurityScannerModelProxy(SecurityScannerInterface):
     def perform_indexing(self, next_token=None, batch_size=None):
         return self._model.perform_indexing(next_token, batch_size)
 
-    def perform_indexing_recent_manifests(self, batch_size=None):
-        self._model.perform_indexing_recent_manifests(batch_size)
-
     def load_security_information(
         self, manifest_or_legacy_image, include_vulnerabilities, model_cache=None
     ):

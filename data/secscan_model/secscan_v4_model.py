@@ -87,9 +87,6 @@ class NoopV4SecurityScanner(SecurityScannerInterface):
     def perform_indexing(self, start_token=None, batch_size=None):
         return None
 
-    def perform_indexing_recent_manifests(self, batch_size=None):
-        pass
-
     def register_model_cleanup_callbacks(self, data_model_config):
         pass
 
@@ -268,9 +265,6 @@ class V4SecurityScanner(SecurityScannerInterface):
         return SecurityInformationLookupResult.for_data(
             SecurityInformation(Layer(report["manifest_hash"], "", "", 4, features_for(report)))
         )
-
-    def perform_indexing_recent_manifests(self, batch_size=None):
-        pass
 
     def perform_indexing(self, start_token=None, batch_size=None):
         try:
