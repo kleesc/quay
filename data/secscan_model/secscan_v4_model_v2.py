@@ -1,5 +1,6 @@
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 import features
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_REINDEX_THRESHOLD = 86400
 DEFAULT_MAX_SCAN_RETRIES = 5
+DEFAULT_INDEX_THREAD_COUNT = 3
 STALE_IN_PROGRESS_HOURS = 6
 TAG_LIMIT = 100
 
@@ -98,8 +100,21 @@ class V4SecurityScannerV2(SecurityScannerIndexerInterface):
             logger.debug("No manifests to index this cycle")
             return
 
-        for mss_row in claimed:
-            self._index_manifest(mss_row.manifest, mss_row.repository_id, indexer_hash)
+        thread_count = self.app.config.get(
+            "SECURITY_SCANNER_V2_INDEX_THREAD_COUNT", DEFAULT_INDEX_THREAD_COUNT
+        )
+        with ThreadPoolExecutor(
+            max_workers=thread_count, thread_name_prefix="secscan-v2"
+        ) as executor:
+            futures = [
+                executor.submit(self._index_manifest, row.manifest, row.repository_id, indexer_hash)
+                for row in claimed
+            ]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception:
+                    logger.exception("Unexpected error indexing manifest")
 
         cycle_duration = time.monotonic() - cycle_start
         secscan_v2_cycle_duration.observe(cycle_duration)
