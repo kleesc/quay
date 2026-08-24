@@ -13,6 +13,7 @@ from data.database import (
     db_transaction,
     get_epoch_timestamp_ms,
 )
+from data.model import repository
 from data.registry_model import registry_model
 from data.registry_model.datatypes import Manifest as ManifestDataType
 from data.secscan_model.interface import SecurityScannerIndexerInterface
@@ -103,9 +104,19 @@ class V4SecurityScannerV2(SecurityScannerIndexerInterface):
         indexable = []
         for mss_row in claimed:
             prepared = self._prepare_for_indexing(mss_row.manifest)
-            if prepared is not None:
-                manifest, layers = prepared
-                indexable.append((mss_row, manifest, layers))
+            if prepared is None:
+                continue
+
+            manifest, layers = prepared
+
+            # Prime namespace/name on the main greenlet: the pool reads these to sign blob URLs
+            # and has no DB connection, so a lazy Peewee lookup there would fail.
+            repo = repository.lookup_repository(mss_row.manifest.repository_id)
+            if repo is not None:
+                manifest.repository._inputs["namespace_name"] = repo.namespace_user.username
+                manifest.repository._inputs["repo_name"] = repo.name
+
+            indexable.append((mss_row, manifest, layers))
 
         if indexable:
             thread_count = self.app.config.get(

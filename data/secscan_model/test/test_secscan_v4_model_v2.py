@@ -721,6 +721,30 @@ class TestPerformIndexingCycle:
         )
         assert updated.indexer_hash == "none"
 
+    def test_primes_repository_before_thread_pool(self, initialized_db, scanner):
+        # namespace/name must be primed on the main greenlet so the pool never does a DB lookup.
+        from data.model import repository
+
+        captured = {}
+
+        def capture(manifest, layers):
+            # Reading these in the pool must not hit the DB.
+            with mock.patch.object(
+                repository,
+                "lookup_repository",
+                side_effect=AssertionError("repository lookup must not run off the main thread"),
+            ):
+                captured["namespace_name"] = manifest.repository.namespace_name
+                captured["repo_name"] = manifest.repository.name
+            return None, None, Non200ResponseException(mock.Mock(status_code=500))
+
+        with mock.patch.object(scanner, "_call_clair_index", side_effect=capture):
+            scanner.perform_indexing(batch_size=100)
+
+        # At least one manifest reached the pool with a primed repository.
+        assert captured.get("namespace_name") is not None
+        assert captured.get("repo_name") is not None
+
     def test_scan_success_emits_notifications(self, initialized_db, scanner):
         from data.registry_model.datatypes import Manifest as ManifestDataType
 
