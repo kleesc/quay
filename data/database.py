@@ -715,6 +715,8 @@ def configure(config_object, testing=False):
 
     read_only_config.initialize(ReadOnlyConfig(is_read_only, read_replica_dbs))
 
+    configure_shadow_tables(config_object)
+
     def _db_transaction():
         return config_object["DB_TRANSACTION_FACTORY"](db)
 
@@ -839,11 +841,23 @@ def deprecated_field(field, flag):
     return None
 
 
+_shadow_table_map = {}
+
+
+def configure_shadow_tables(config_object):
+    _shadow_table_map.clear()
+    _shadow_table_map.update(config_object.get("SHADOW_TABLE_MAP", {}))
+
+
 class BaseModel(ReadReplicaSupportedModel):
     class Meta:
         database = db
         encrypter = db_encrypter
         read_only_config = read_only_config
+
+        def table_function(model_class):
+            default_name = model_class.__name__.lower()
+            return _shadow_table_map.get(default_name, default_name)
 
     def __getattribute__(self, name):
         """
